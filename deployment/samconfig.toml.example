@@ -1,0 +1,36 @@
+# SAM configuration file example
+# Copy this to samconfig.toml and customize for your deployment
+
+version = 0.1
+
+[default]
+[default.build]
+[default.build.parameters]
+cached = true
+parallel = true
+
+[default.deploy]
+[default.deploy.parameters]
+stack_name = "arbor-calendar-sync"
+s3_bucket = "your-sam-deployment-bucket"  # Will be created if needed
+s3_prefix = "arbor-calendar-sync"
+region = "us-east-1"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = [
+    "GoogleCalendarId=primary",
+    "ArborBaseUrl=https://your-school.uk.arbor.sc",
+    "ArborStudentId=your-student-id",
+    "ArborUsername=your-arbor-username",
+    "ArborPassword=your-arbor-password",
+    "UpdateExistingEvents=true",
+    "DeleteOrphanedEvents=true"
+]
+
+[default.local_start_api]
+[default.local_start_api.parameters]
+warm_containers = "EAGER"
+
+[default.local_start_lambda]
+[default.local_start_lambda.parameters]
+warm_containers = "EAGER"

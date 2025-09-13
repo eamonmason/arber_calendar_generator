@@ -12,6 +12,9 @@ Sync school calendar events from the Arbor API directly to Google Calendar using
 - **Rate Limiting**: Handles large syncs with proper API rate limiting
 - **Dry Run Mode**: Preview changes before applying them
 - **Environment Configuration**: Secure configuration via .env files
+- **Dual Deployment**: Run locally as a script OR deploy as AWS Lambda with weekly scheduling
+- **AWS Integration**: CloudFormation template with EventBridge for automated weekly syncs
+- **CI/CD Pipeline**: GitHub Actions workflow for automated testing and deployment
 
 ## Quick Start
 
@@ -58,44 +61,98 @@ Then run the setup script:
 uv run python setup_google_auth.py <path_to_credentials_file>
 ```
 
-### 4. Sync Your Calendar
+### 4. Run the Application
+
+#### Local Script Mode
 
 ```bash
-# Sync current academic year
-uv run python generate_school_calendar.py
+# Sync current academic year (local mode uses full year)
+uv run python lambda_handler.py
 
 # Preview changes without applying them
-uv run python generate_school_calendar.py --dry-run
+uv run python lambda_handler.py --dry-run
 
 # Sync specific date range
-uv run python generate_school_calendar.py --start-date 2024-01-01 --end-date 2024-07-31
+uv run python lambda_handler.py --start-date 2024-01-01 --end-date 2024-07-31
 
-# Use installed command
-arbor-calendar-sync
+# Run in headless mode (no browser window)
+uv run python lambda_handler.py --headless
 ```
+
+#### AWS Lambda Deployment
+
+**Option 1: GitHub Actions (Recommended)**
+
+For automated deployment on every push to main:
+
+1. Set up GitHub repository secrets (see [.github/DEPLOYMENT.md](.github/DEPLOYMENT.md))
+2. Push to main branch - deployment happens automatically
+3. Monitor deployment in GitHub Actions tab
+
+**Option 2: Manual SAM Deployment**
+
+For manual deployment using SAM CLI:
+
+```bash
+# Build and deploy with SAM CLI
+sam build
+sam deploy --guided
+```
+
+The deployment includes:
+- Lambda function with 15-minute timeout
+- EventBridge schedule for weekly execution (Sundays at 8 AM UTC)
+- IAM roles and policies for Parameter Store access
+- CloudWatch log group for monitoring
+
+See [deployment/README.md](deployment/README.md) for detailed manual AWS deployment instructions.
 
 ## Usage Options
 
+### Local Script Mode
+
 ```bash
-arbor-calendar-sync [OPTIONS]
+python lambda_handler.py [OPTIONS]
 
 Options:
   --start-date DATE        Start date (YYYY-MM-DD), defaults to academic year
   --end-date DATE          End date (YYYY-MM-DD), defaults to academic year
   --academic-year YEAR     Academic year starting in September (e.g., 2024)
-  --calendar-id ID         Google Calendar ID (defaults to primary)
   --headless               Run browser in headless mode (no GUI)
   --dry-run                Show what would be synced without making changes
 ```
 
+### AWS Lambda Mode
+
+**Automated Deployment (GitHub Actions):**
+- Push to main branch triggers automatic deployment
+- Tests run first, then builds and deploys if tests pass
+- Deployment tested automatically with dry-run invocation
+
+**Manual Deployment (SAM CLI):**
+```bash
+sam build
+sam deploy --guided
+```
+
+Lambda runs automatically every Sunday at 8 AM UTC with these features:
+- Headless browser mode (no GUI)
+- Environment-based configuration from AWS Parameter Store
+- CloudWatch logging and monitoring
+- Weekly EventBridge schedule
+- Optimized date range (syncs only future events from today to end of academic year)
+
 ## How It Works
 
-1. **Authentication**: Automatic login to Arbor using configured credentials or manual browser login
-2. **Data Fetching**: Uses correct Arbor API endpoint (`/guardians/widget-data/get-calendar-data/student-id/{id}/date/{date}`) to fetch calendar entries
-3. **Data Processing**: Parses new nested field structure (`fields.{field}.value`) and extracts lesson details
-4. **Event Creation**: Converts lessons to Google Calendar events with embedded Arbor IDs in descriptions
-5. **Smart Sync**: Compares with existing events using Arbor IDs, prevents duplicates
-6. **Rate-Limited Sync**: Applies changes with proper rate limiting for large datasets (1,291+ lessons)
+1. **Execution Mode Detection**: Automatically detects local vs Lambda execution mode
+2. **Credential Management**: Loads from .env file locally or AWS Parameter Store in Lambda
+3. **Smart Date Range**: Uses full academic year locally, optimized future-only range in Lambda
+4. **Authentication**: Automatic login to Arbor using configured credentials or manual browser login
+5. **Data Fetching**: Uses correct Arbor API endpoint (`/guardians/widget-data/get-calendar-data/student-id/{id}/date/{date}`) to fetch calendar entries
+6. **Data Processing**: Parses new nested field structure (`fields.{field}.value`) and extracts lesson details
+7. **Event Creation**: Converts lessons to Google Calendar events with embedded Arbor IDs in descriptions
+8. **Smart Sync**: Compares with existing events using Arbor IDs, prevents duplicates
+9. **Rate-Limited Sync**: Applies changes with proper rate limiting for large datasets (1,291+ lessons)
 
 ## Configuration
 
@@ -113,7 +170,7 @@ Key environment variables:
 # Google Calendar Configuration
 GOOGLE_CALENDAR_ID=your-calendar-id@group.calendar.google.com
 GOOGLE_CREDENTIALS_PATH=./client_secret_*.json
-# GOOGLE_TOKEN_PATH is auto-generated during OAuth flow
+# GOOGLE_TOKEN_PATH=./token.json  # Auto-generated during OAuth flow
 
 # Arbor Configuration
 ARBOR_BASE_URL=https://your-school.uk.arbor.sc
@@ -122,10 +179,11 @@ ARBOR_STUDENT_OBJECT_ID=1234
 ARBOR_USERNAME=your.username@example.com
 ARBOR_PASSWORD=your-password
 
-# Sync Behavior (Optional)
-# SYNC_DELETE_ORPHANED_EVENTS=true
-# SYNC_UPDATE_EXISTING_EVENTS=true
-# SYNC_DRY_RUN=false
+# AWS Lambda Configuration (Optional - for Parameter Store integration)
+# GOOGLE_CREDENTIALS_PARAMETER=/arbor-calendar-sync/google-credentials
+# GOOGLE_TOKEN_PARAMETER=/arbor-calendar-sync/google-token
+# ARBOR_USERNAME_PARAMETER=/arbor-calendar-sync/arbor-username
+# ARBOR_PASSWORD_PARAMETER=/arbor-calendar-sync/arbor-password
 ```
 
 ### JSON Configuration (Alternative)
@@ -154,6 +212,8 @@ Configuration can also be stored in `~/.config/arbor-calendar-sync/config.json`:
 
 ## Development
 
+### Local Development
+
 ```bash
 # Run tests
 uv run pytest
@@ -168,6 +228,16 @@ uv run mypy .
 # Run all checks
 uv run pytest && uv run ruff check && uv run mypy .
 ```
+
+### Automated CI/CD
+
+The project includes a GitHub Actions workflow that automatically:
+
+1. **On every push/PR**: Runs tests, linting, and type checking
+2. **On push to main**: Builds and deploys to AWS Lambda
+3. **Tests deployment**: Verifies Lambda deployment with dry-run invocation
+
+Setup instructions: [.github/DEPLOYMENT.md](.github/DEPLOYMENT.md)
 
 ## Security Notes
 
@@ -201,8 +271,8 @@ echo ".env" >> .gitignore
 ### Sync Issues
 - Use `--dry-run` to see what changes would be made
 - Check calendar permissions in Google Calendar settings
-- Get your calendar ID by running `uv run python list_calendars.py`
 - Verify the ARBOR_STUDENT_OBJECT_ID is correct for your student account
+- Ensure your Google Calendar ID is correct (should end in @group.calendar.google.com for shared calendars)
 
 ### Browser Issues
 - Use `--headless` flag if you have display issues
@@ -212,4 +282,32 @@ echo ".env" >> .gitignore
 ### Data Issues
 - Check that you're using the correct Arbor base URL for your school
 - Verify the student object ID matches your Arbor account
-- Use debug scripts (`debug_event_ids.py`, `test_correct_url_format.py`) for troubleshooting
+
+### AWS Lambda Issues
+
+For Lambda deployment issues, check:
+- CloudWatch logs: `/aws/lambda/your-function-name`
+- Environment variables are properly configured
+- Lambda execution role has necessary permissions
+- Function timeout (default: 15 minutes) is sufficient
+- See [deployment/README.md](deployment/README.md) for detailed troubleshooting
+
+## Deployment Options
+
+### Local Development
+Perfect for testing and manual syncs:
+```bash
+python lambda_handler.py --dry-run
+```
+
+### AWS Lambda (Recommended)
+Automated weekly syncs with no maintenance:
+- Deploy once with SAM CLI using included CloudFormation template
+- Runs every Sunday at 8 AM UTC automatically via EventBridge
+- Secure credential storage in AWS Parameter Store
+- CloudWatch monitoring and logging with 15-minute timeout
+- Optimized execution (syncs only future events from today)
+- No server management required
+- Cost: ~$0/month (within AWS free tier)
+
+See [deployment/README.md](deployment/README.md) for complete AWS setup instructions.

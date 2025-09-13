@@ -82,3 +82,5 @@ dmypy.json
 
 client_secret*.json
 .claude/
+samconfig.toml
+.aws-sam/

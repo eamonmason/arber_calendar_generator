@@ -130,9 +130,16 @@ class GoogleCalendarSync:
         start_time = lesson["from_date"].isoformat()
         end_time = lesson["to_date"].isoformat()
 
+        # Create description, only include staff if it's actually available (not a placeholder)
+        staff = lesson.get('staff', '')
+        if staff and staff != "Teacher TBD" and not staff.startswith("Teacher ("):
+            description = f"Staff: {staff}\nSource: Arbor Calendar Sync\nID: {self.generate_event_id(lesson)}"
+        else:
+            description = f"Source: Arbor Calendar Sync\nID: {self.generate_event_id(lesson)}"
+
         event = {
             "summary": lesson["subject"],
-            "description": f"Staff: {lesson['staff']}\nSource: Arbor Calendar Sync\nID: {self.generate_event_id(lesson)}",
+            "description": description,
             "start": {
                 "dateTime": start_time,
                 "timeZone": config.arbor_timezone,

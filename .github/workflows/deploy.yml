@@ -1,0 +1,152 @@
+name: Build and Deploy to AWS Lambda
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  SAM_STACK_NAME: arbor-calendar-sync
+
+jobs:
+  test:
+    name: Test and Lint
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: "latest"
+
+    - name: Set up Python
+      run: uv python install 3.11
+
+    - name: Install dependencies
+      run: uv sync
+
+    - name: Install Playwright browsers
+      run: uv run playwright install --with-deps
+
+    - name: Run linting
+      run: |
+        uv run ruff check
+        uv run ruff format --check
+
+    - name: Run type checking
+      run: uv run mypy .
+
+    - name: Run tests
+      run: uv run pytest --verbose
+
+  build-and-deploy:
+    name: Build and Deploy
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: "latest"
+
+    - name: Set up Python
+      run: uv python install 3.11
+
+    - name: Install dependencies
+      run: uv sync
+
+    - name: Setup SAM CLI
+      uses: aws-actions/setup-sam@v2
+      with:
+        use-installer: true
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+        aws-region: ${{ env.AWS_REGION }}
+        role-session-name: GitHubActions-ArborCalendarSync
+
+    - name: Build SAM application
+      run: sam build --use-container
+
+    - name: Deploy SAM application
+      run: |
+        sam deploy \
+          --stack-name ${{ env.SAM_STACK_NAME }} \
+          --capabilities CAPABILITY_IAM \
+          --region ${{ env.AWS_REGION }} \
+          --no-confirm-changeset \
+          --no-fail-on-empty-changeset \
+          --parameter-overrides \
+            GoogleCredentialsParameter="${{ secrets.GOOGLE_CREDENTIALS_PARAMETER }}" \
+            GoogleTokenParameter="${{ secrets.GOOGLE_TOKEN_PARAMETER }}" \
+            ArborUsernameParameter="${{ secrets.ARBOR_USERNAME_PARAMETER }}" \
+            ArborPasswordParameter="${{ secrets.ARBOR_PASSWORD_PARAMETER }}" \
+            GoogleCalendarId="${{ secrets.GOOGLE_CALENDAR_ID }}" \
+            ArborBaseUrl="${{ secrets.ARBOR_BASE_URL }}" \
+            ArborStudentObjectId="${{ secrets.ARBOR_STUDENT_OBJECT_ID }}" \
+            ArborTimezone="${{ vars.ARBOR_TIMEZONE || 'Europe/London' }}"
+
+    - name: Get Lambda function name
+      id: get-function-name
+      run: |
+        FUNCTION_NAME=$(aws cloudformation describe-stacks \
+          --stack-name ${{ env.SAM_STACK_NAME }} \
+          --query 'Stacks[0].Outputs[?OutputKey==`ArborCalendarSyncFunction`].OutputValue' \
+          --output text)
+        echo "function-name=$FUNCTION_NAME" >> $GITHUB_OUTPUT
+
+    - name: Test Lambda deployment
+      run: |
+        aws lambda invoke \
+          --function-name ${{ steps.get-function-name.outputs.function-name }} \
+          --payload '{"dry_run": true}' \
+          /tmp/lambda-response.json
+
+        cat /tmp/lambda-response.json
+
+        # Check if the test invocation was successful
+        STATUS_CODE=$(jq -r '.statusCode // empty' /tmp/lambda-response.json)
+        if [ "$STATUS_CODE" != "200" ]; then
+          echo "❌ Lambda test invocation failed"
+          exit 1
+        else
+          echo "✅ Lambda deployment test successful"
+        fi
+
+  notify:
+    name: Notify Deployment
+    runs-on: ubuntu-latest
+    needs: [test, build-and-deploy]
+    if: always() && github.ref == 'refs/heads/main'
+
+    steps:
+    - name: Deployment Success
+      if: needs.build-and-deploy.result == 'success'
+      run: |
+        echo "🚀 Deployment successful!"
+        echo "Stack: ${{ env.SAM_STACK_NAME }}"
+        echo "Region: ${{ env.AWS_REGION }}"
+
+    - name: Deployment Failed
+      if: needs.build-and-deploy.result == 'failure'
+      run: |
+        echo "❌ Deployment failed!"
+        echo "Check the logs above for details."
+        exit 1

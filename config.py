@@ -23,7 +23,11 @@ class Config:
         load_dotenv(env_file)
 
         if config_file is None:
-            config_dir = Path.home() / ".config" / "arbor-calendar-sync"
+            # Use /tmp in Lambda environment, ~/.config locally
+            if os.environ.get('AWS_LAMBDA_FUNCTION_NAME'):
+                config_dir = Path("/tmp") / "arbor-calendar-sync"
+            else:
+                config_dir = Path.home() / ".config" / "arbor-calendar-sync"
             config_dir.mkdir(parents=True, exist_ok=True)
             config_file = config_dir / "config.json"
 

@@ -1,0 +1,238 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'Arbor Calendar Sync - Weekly Lambda function to sync Arbor calendar with Google Calendar'
+
+Parameters:
+  GoogleCalendarId:
+    Type: String
+    Description: Google Calendar ID where events will be synced
+    Default: "primary"
+
+  ArborBaseUrl:
+    Type: String
+    Description: Base URL for Arbor MIS
+    Default: "https://your-school.uk.arbor.sc"
+
+  ArborStudentId:
+    Type: String
+    Description: Student ID in Arbor system
+    NoEcho: true
+
+  ArborUsername:
+    Type: String
+    Description: Arbor username for automatic login
+    NoEcho: true
+
+  ArborPassword:
+    Type: String
+    Description: Arbor password for automatic login
+    NoEcho: true
+
+  UpdateExistingEvents:
+    Type: String
+    Description: Whether to update existing events
+    Default: "true"
+    AllowedValues: ["true", "false"]
+
+  DeleteOrphanedEvents:
+    Type: String
+    Description: Whether to delete orphaned events
+    Default: "true"
+    AllowedValues: ["true", "false"]
+
+Globals:
+  Function:
+    Timeout: 900  # 15 minutes (maximum allowed for Lambda)
+    MemorySize: 1024  # Increased for better performance
+
+Resources:
+  # KMS Key for encrypting sensitive parameters
+  ParameterStoreKMSKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: 'KMS Key for encrypting Arbor Calendar Sync parameters'
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+
+  ParameterStoreKMSKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${AWS::StackName}-parameter-store'
+      TargetKeyId: !Ref ParameterStoreKMSKey
+
+  # Parameter Store parameters for configuration
+  GoogleCredentialsParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${AWS::StackName}/google/credentials'
+      Description: 'Google OAuth credentials for Arbor Calendar Sync'
+      Type: String
+      Value: !Sub |
+        {
+          "type": "placeholder",
+          "project_id": "your-project-id",
+          "private_key_id": "placeholder",
+          "private_key": "placeholder",
+          "client_email": "placeholder@your-project-id.iam.gserviceaccount.com",
+          "client_id": "placeholder",
+          "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+          "token_uri": "https://oauth2.googleapis.com/token",
+          "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+          "client_x509_cert_url": "placeholder"
+        }
+
+  GoogleTokenParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${AWS::StackName}/google/token'
+      Description: 'Google OAuth token for Arbor Calendar Sync'
+      Type: String
+      Value: !Sub |
+        {
+          "token": "placeholder",
+          "refresh_token": "placeholder",
+          "token_uri": "https://oauth2.googleapis.com/token",
+          "client_id": "placeholder",
+          "client_secret": "placeholder",
+          "scopes": ["https://www.googleapis.com/auth/calendar"],
+          "expiry": "placeholder"
+        }
+
+  ArborUsernameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${AWS::StackName}/arbor/username'
+      Description: 'Arbor username for calendar sync'
+      Type: String
+      Value: !Ref ArborUsername
+
+  ArborPasswordParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${AWS::StackName}/arbor/password'
+      Description: 'Arbor password for calendar sync'
+      Type: String
+      Value: !Ref ArborPassword
+
+  # IAM Role for Lambda function
+  ArborCalendarSyncFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: ParameterStoreAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                Resource:
+                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${AWS::StackName}/*'
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                  - kms:DescribeKey
+                Resource: !GetAtt ParameterStoreKMSKey.Arn
+
+  ArborCalendarSyncFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: .
+      DockerTag: latest
+    Properties:
+      PackageType: Image
+      ImageUri: .
+      Description: 'Syncs Arbor calendar with Google Calendar weekly on Sundays'
+      Role: !GetAtt ArborCalendarSyncFunctionRole.Arn
+      Architectures:
+        - arm64
+      Environment:
+        Variables:
+          GOOGLE_CALENDAR_ID: !Ref GoogleCalendarId
+          PARAMETER_STORE_PREFIX: !Sub '/${AWS::StackName}'
+          GOOGLE_CREDENTIALS_PARAMETER: !Sub '/${AWS::StackName}/google/credentials'
+          GOOGLE_TOKEN_PARAMETER: !Sub '/${AWS::StackName}/google/token'
+          ARBOR_USERNAME_PARAMETER: !Sub '/${AWS::StackName}/arbor/username'
+          ARBOR_PASSWORD_PARAMETER: !Sub '/${AWS::StackName}/arbor/password'
+          ARBOR_BASE_URL: !Ref ArborBaseUrl
+          ARBOR_STUDENT_ID: !Ref ArborStudentId
+          UPDATE_EXISTING_EVENTS: !Ref UpdateExistingEvents
+          DELETE_ORPHANED_EVENTS: !Ref DeleteOrphanedEvents
+          ARBOR_TIMEZONE: "Europe/London"
+          KMS_KEY_ID: !Ref ParameterStoreKMSKey
+      Events:
+        WeeklySundaySchedule:
+          Type: Schedule
+          Properties:
+            Schedule: 'cron(0 8 ? * SUN *)'  # Every Sunday at 8 AM UTC
+            Description: 'Weekly calendar sync every Sunday morning'
+            Input: !Sub |
+              {
+                "dry_run": false,
+                "headless": true
+              }
+
+  ArborCalendarSyncLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ArborCalendarSyncFunction}'
+      RetentionInDays: 30
+
+Outputs:
+  ArborCalendarSyncFunction:
+    Description: 'Arbor Calendar Sync Lambda Function ARN'
+    Value: !GetAtt ArborCalendarSyncFunction.Arn
+
+  FunctionName:
+    Description: 'Lambda Function Name'
+    Value: !Ref ArborCalendarSyncFunction
+
+  ScheduleExpression:
+    Description: 'EventBridge Schedule Expression'
+    Value: 'cron(0 8 ? * SUN *)'
+
+  ParameterStorePrefix:
+    Description: 'Parameter Store prefix for all parameters'
+    Value: !Sub '/${AWS::StackName}'
+
+  KMSKeyId:
+    Description: 'KMS Key ID for parameter encryption'
+    Value: !Ref ParameterStoreKMSKey
+
+  KMSKeyAlias:
+    Description: 'KMS Key Alias for parameter encryption'
+    Value: !Ref ParameterStoreKMSKeyAlias
+
+  GoogleCredentialsParameter:
+    Description: 'Google Credentials Parameter name'
+    Value: !Sub '/${AWS::StackName}/google/credentials'
+
+  GoogleTokenParameter:
+    Description: 'Google Token Parameter name'
+    Value: !Sub '/${AWS::StackName}/google/token'
+
+  ArborUsernameParameter:
+    Description: 'Arbor Username Parameter name'
+    Value: !Sub '/${AWS::StackName}/arbor/username'
+
+  ArborPasswordParameter:
+    Description: 'Arbor Password Parameter name'
+    Value: !Sub '/${AWS::StackName}/arbor/password'
