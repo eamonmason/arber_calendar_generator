@@ -60,7 +60,9 @@ RUN chmod -R 755 ${LAMBDA_TASK_ROOT}/playwright-browsers
 RUN echo "=== DEBUG: Playwright installation ===" && \
     ls -la ${LAMBDA_TASK_ROOT}/playwright-browsers/ && \
     echo "=== DEBUG: Browser executable check ===" && \
-    find ${LAMBDA_TASK_ROOT}/playwright-browsers/ -name "chrome*" -type f -executable && \
+    ls -la ${LAMBDA_TASK_ROOT}/playwright-browsers/chromium*/chrome-linux/chrome 2>/dev/null || echo "Chrome binary not found in expected location" && \
+    echo "=== DEBUG: Browser directory structure ===" && \
+    ls -laR ${LAMBDA_TASK_ROOT}/playwright-browsers/ | head -20 && \
     echo "=== DEBUG: Environment variables ===" && \
     env | grep PLAYWRIGHT
 
