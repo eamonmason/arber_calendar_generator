@@ -46,45 +46,13 @@ Globals:
     MemorySize: 1024  # Increased for better performance
 
 Resources:
-  # KMS Key for encrypting sensitive parameters
-  ParameterStoreKMSKey:
-    Type: AWS::KMS::Key
-    Properties:
-      Description: 'KMS Key for encrypting Arbor Calendar Sync parameters'
-      KeyPolicy:
-        Version: '2012-10-17'
-        Statement:
-          - Sid: Enable IAM User Permissions
-            Effect: Allow
-            Principal:
-              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
-            Action: 'kms:*'
-            Resource: '*'
-          - Sid: Allow CloudFormation access
-            Effect: Allow
-            Principal:
-              Service: cloudformation.amazonaws.com
-            Action:
-              - 'kms:Decrypt'
-              - 'kms:DescribeKey'
-              - 'kms:Encrypt'
-              - 'kms:GenerateDataKey'
-              - 'kms:ReEncrypt*'
-            Resource: '*'
-
-  ParameterStoreKMSKeyAlias:
-    Type: AWS::KMS::Alias
-    Properties:
-      AliasName: !Sub 'alias/${AWS::StackName}-parameter-store'
-      TargetKeyId: !Ref ParameterStoreKMSKey
-
   # Parameter Store parameters for configuration
   GoogleCredentialsParameter:
     Type: AWS::SSM::Parameter
     Properties:
       Name: !Sub '/${AWS::StackName}/google/credentials'
       Description: 'Google OAuth credentials for Arbor Calendar Sync'
-      Type: String
+      Type: SecureString
       Value: !Sub |
         {
           "type": "placeholder",
@@ -104,7 +72,7 @@ Resources:
     Properties:
       Name: !Sub '/${AWS::StackName}/google/token'
       Description: 'Google OAuth token for Arbor Calendar Sync'
-      Type: String
+      Type: SecureString
       Value: !Sub |
         {
           "token": "placeholder",
@@ -121,7 +89,7 @@ Resources:
     Properties:
       Name: !Sub '/${AWS::StackName}/arbor/username'
       Description: 'Arbor username for calendar sync'
-      Type: String
+      Type: SecureString
       Value: !Ref ArborUsername
 
   ArborPasswordParameter:
@@ -129,7 +97,7 @@ Resources:
     Properties:
       Name: !Sub '/${AWS::StackName}/arbor/password'
       Description: 'Arbor password for calendar sync'
-      Type: String
+      Type: SecureString
       Value: !Ref ArborPassword
 
   # IAM Role for Lambda function
@@ -156,11 +124,6 @@ Resources:
                   - ssm:GetParameters
                 Resource:
                   - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${AWS::StackName}/*'
-              - Effect: Allow
-                Action:
-                  - kms:Decrypt
-                  - kms:DescribeKey
-                Resource: !GetAtt ParameterStoreKMSKey.Arn
 
   ArborCalendarSyncFunction:
     Type: AWS::Serverless::Function
@@ -188,7 +151,6 @@ Resources:
           UPDATE_EXISTING_EVENTS: !Ref UpdateExistingEvents
           DELETE_ORPHANED_EVENTS: !Ref DeleteOrphanedEvents
           ARBOR_TIMEZONE: "Europe/London"
-          KMS_KEY_ID: !Ref ParameterStoreKMSKey
       Events:
         WeeklySundaySchedule:
           Type: Schedule
@@ -224,13 +186,6 @@ Outputs:
     Description: 'Parameter Store prefix for all parameters'
     Value: !Sub '/${AWS::StackName}'
 
-  KMSKeyId:
-    Description: 'KMS Key ID for parameter encryption'
-    Value: !Ref ParameterStoreKMSKey
-
-  KMSKeyAlias:
-    Description: 'KMS Key Alias for parameter encryption'
-    Value: !Ref ParameterStoreKMSKeyAlias
 
   GoogleCredentialsParameter:
     Description: 'Google Credentials Parameter name'
