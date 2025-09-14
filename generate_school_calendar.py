@@ -100,14 +100,22 @@ class ArborCalendarGenerator:
             )
             if os.path.exists(browsers_path):
                 logger.debug(f"   Browsers directory exists: {browsers_path}")
-                import subprocess
 
-                result = subprocess.run(
-                    ["find", browsers_path, "-name", "*chrome*", "-type", "f"],
-                    capture_output=True,
-                    text=True,
-                )
-                logger.debug(f"   Chrome binaries found: {result.stdout.strip()}")
+                # Find Chrome binaries using Python instead of find command
+                chrome_binaries = []
+                for root, _dirs, files in os.walk(browsers_path):
+                    for file in files:
+                        if "chrome" in file.lower():
+                            full_path = os.path.join(root, file)
+                            if os.path.isfile(full_path):
+                                chrome_binaries.append(full_path)
+
+                if chrome_binaries:
+                    logger.debug(
+                        f"   Chrome binaries found: {chr(10).join(chrome_binaries)}"
+                    )
+                else:
+                    logger.debug("   No Chrome binaries found")
             else:
                 logger.warning(f"   Browsers directory MISSING: {browsers_path}")
             logger.debug("==============================================")
