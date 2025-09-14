@@ -51,6 +51,7 @@ The GitHub Actions workflow automatically:
    - `AmazonSSMFullAccess`
    - `AmazonS3FullAccess` (required for SAM deployment S3 bucket creation)
    - `AmazonEC2ContainerRegistryFullAccess` (required for Docker image repository creation)
+   - `AWSKeyManagementServicePowerUser` (required for KMS key creation and management)
 
 #### Configure OIDC Provider (if not already done)
 
@@ -191,6 +192,7 @@ The workflow automatically tests deployments by:
    - Ensure no naming conflicts with existing resources
    - **S3 Bucket Creation Error**: Ensure IAM role has `AmazonS3FullAccess` policy attached
    - **ECR Repository Creation Error**: Ensure IAM role has `AmazonEC2ContainerRegistryFullAccess` policy attached
+   - **KMS Key Creation Error**: Ensure IAM role has `AWSKeyManagementServicePowerUser` policy attached
 
 4. **Lambda Test Failure**
    - Check Lambda logs in CloudWatch
