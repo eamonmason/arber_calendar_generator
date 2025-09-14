@@ -49,6 +49,7 @@ The GitHub Actions workflow automatically:
    - `AmazonEventBridgeFullAccess`
    - `CloudWatchLogsFullAccess`
    - `AmazonSSMFullAccess`
+   - `AmazonS3FullAccess` (required for SAM deployment S3 bucket creation)
 
 #### Configure OIDC Provider (if not already done)
 
@@ -121,7 +122,7 @@ Add the following **Repository Variables**:
 
 The workflow uses these environment variables (configurable at the top of `.github/workflows/deploy.yml`):
 
-- `AWS_REGION`: AWS region for deployment (default: `us-east-1`)
+- `AWS_REGION`: AWS region for deployment (default: `eu-west-1`)
 - `SAM_STACK_NAME`: CloudFormation stack name (default: `arbor-calendar-sync`)
 
 ### Workflow Triggers
@@ -187,6 +188,7 @@ The workflow automatically tests deployments by:
    - Check CloudFormation events in AWS Console
    - Verify all required parameters are provided
    - Ensure no naming conflicts with existing resources
+   - **S3 Bucket Creation Error**: Ensure IAM role has `AmazonS3FullAccess` policy attached
 
 4. **Lambda Test Failure**
    - Check Lambda logs in CloudWatch
