@@ -80,6 +80,34 @@ class ArborCalendarGenerator:
 
         playwright = await async_playwright().start()
 
+        # Debug: Show Playwright and browser information in Lambda
+        if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+            print("=== DEBUG: Playwright runtime information ===")
+            print(
+                f"   PLAYWRIGHT_BROWSERS_PATH: {os.environ.get('PLAYWRIGHT_BROWSERS_PATH', 'Not set')}"
+            )
+            print(
+                f"   PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS: {os.environ.get('PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS', 'Not set')}"
+            )
+
+            # Check if browser binaries exist
+            browsers_path = os.environ.get(
+                "PLAYWRIGHT_BROWSERS_PATH", "/tmp/playwright-browsers"
+            )
+            if os.path.exists(browsers_path):
+                print(f"   Browsers directory exists: {browsers_path}")
+                import subprocess
+
+                result = subprocess.run(
+                    ["find", browsers_path, "-name", "*chrome*", "-type", "f"],
+                    capture_output=True,
+                    text=True,
+                )
+                print(f"   Chrome binaries found: {result.stdout.strip()}")
+            else:
+                print(f"   Browsers directory MISSING: {browsers_path}")
+            print("==============================================")
+
         # Add Lambda-specific browser arguments with more aggressive resource reduction
         launch_args = []
         if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):

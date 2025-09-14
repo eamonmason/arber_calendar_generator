@@ -81,9 +81,13 @@ jobs:
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
+      with:
+        platforms: linux/amd64
 
     - name: Build SAM application
-      run: sam build --use-container
+      run: |
+        export DOCKER_DEFAULT_PLATFORM=linux/amd64
+        sam build --use-container
 
     - name: Deploy SAM application
       run: |

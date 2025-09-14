@@ -52,8 +52,17 @@ ENV PYTHONPATH="${LAMBDA_TASK_ROOT}/.venv/lib/python3.12/site-packages:${PYTHONP
 ENV PLAYWRIGHT_BROWSERS_PATH=${LAMBDA_TASK_ROOT}/playwright-browsers
 ENV PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true
 
-# Install Playwright browsers
+# Install Playwright browsers and ensure correct permissions
 RUN ${LAMBDA_TASK_ROOT}/.venv/bin/playwright install chromium
+RUN chmod -R 755 ${LAMBDA_TASK_ROOT}/playwright-browsers
+
+# Debug: List installed browsers and their locations
+RUN echo "=== DEBUG: Playwright installation ===" && \
+    ls -la ${LAMBDA_TASK_ROOT}/playwright-browsers/ && \
+    echo "=== DEBUG: Browser executable check ===" && \
+    find ${LAMBDA_TASK_ROOT}/playwright-browsers/ -name "chrome*" -type f -executable && \
+    echo "=== DEBUG: Environment variables ===" && \
+    env | grep PLAYWRIGHT
 
 # Copy application code
 COPY . ${LAMBDA_TASK_ROOT}
