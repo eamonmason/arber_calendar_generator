@@ -12,6 +12,7 @@ import argparse
 import asyncio
 import datetime
 import json
+import os
 from typing import Any
 
 import bs4 as bs
@@ -170,14 +171,18 @@ class ArborCalendarGenerator:
                 # Check if we're in Lambda environment - don't try manual login
                 if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
                     print("Running in Lambda environment, cannot perform manual login.")
-                    raise RuntimeError(f"Automatic login failed in Lambda environment: {e}")
+                    raise RuntimeError(
+                        f"Automatic login failed in Lambda environment: {e}"
+                    ) from e
                 print("Falling back to manual login...")
                 await self._manual_login()
         else:
             # Check if we're in Lambda environment - don't try manual login
             if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
                 print("No credentials provided in Lambda environment.")
-                raise RuntimeError("Cannot perform manual login in Lambda environment. Please provide ARBOR_USERNAME and ARBOR_PASSWORD.")
+                raise RuntimeError(
+                    "Cannot perform manual login in Lambda environment. Please provide ARBOR_USERNAME and ARBOR_PASSWORD."
+                )
             print("No credentials provided, using manual login...")
             await self._manual_login()
 
