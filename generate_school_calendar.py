@@ -114,10 +114,23 @@ class ArborCalendarGenerator:
         )
         self.context.set_default_timeout(browser_timeout)
         self.page = await self.context.new_page()
-        print("Browser started successfully")
-        print(f"Context created: {self.context is not None}")
-        print(f"Context closed status: {getattr(self.context, '_closed', 'unknown')}")
-        print(f"Page created: {self.page is not None}")
+        print("✅ Browser started successfully")
+        print(f"   Context created: {self.context is not None}")
+        print(
+            f"   Context closed status: {getattr(self.context, '_closed', 'unknown')}"
+        )
+        print(f"   Page created: {self.page is not None}")
+        print(f"   Page closed: {self.page.is_closed() if self.page else 'N/A'}")
+
+        # Test context immediately after creation
+        try:
+            await self.page.evaluate("() => document.title")
+            print("   ✓ Context validation: Page evaluation successful")
+        except Exception as e:
+            print(f"   ❌ Context validation failed immediately: {e}")
+            raise RuntimeError(
+                f"Browser context failed validation immediately after creation: {e}"
+            ) from e
 
     async def close_browser(self) -> None:
         """Close the browser and cleanup resources safely."""
@@ -153,9 +166,18 @@ class ArborCalendarGenerator:
         if not self.page:
             raise RuntimeError("Browser not started. Call start_browser() first.")
 
+        # Check context before navigation
+        if not self.context or getattr(self.context, "_closed", True):
+            raise RuntimeError("Browser context was closed before login navigation")
+
         # Try base URL first since /auth/login might be broken
+        print(f"Navigating to Arbor base URL: {config.arbor_base_url}")
         await self.page.goto(config.arbor_base_url)
-        print("Navigating to Arbor base URL...")
+        print("✅ Navigation to Arbor base URL completed")
+
+        # Check context after navigation
+        if not self.context or getattr(self.context, "_closed", True):
+            raise RuntimeError("Browser context was closed during login navigation")
 
         # Check if we have credentials for automatic login
         username = config.arbor_username
@@ -318,10 +340,28 @@ class ArborCalendarGenerator:
             raise RuntimeError("Browser page is not available or has been closed.")
 
         if not self.context or getattr(self.context, "_closed", True):
-            print("Error: Browser context is not available or has been closed.")
-            print(f"Context exists: {self.context is not None}")
+            print("❌ CRITICAL: Browser context is not available or has been closed.")
+            print(f"   Context exists: {self.context is not None}")
             if self.context:
-                print(f"Context closed: {getattr(self.context, '_closed', 'unknown')}")
+                print(
+                    f"   Context closed: {getattr(self.context, '_closed', 'unknown')}"
+                )
+            print(f"   Page exists: {self.page is not None}")
+            if self.page:
+                print(f"   Page closed: {self.page.is_closed()}")
+            print(
+                "   This suggests the browser was closed during operation or failed to initialize properly"
+            )
+
+            # Check if we're in Lambda - provide specific guidance
+            if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+                print(
+                    "   Lambda environment detected - this may be a browser initialization issue"
+                )
+                print(
+                    "   Consider increasing Lambda timeout or checking browser launch arguments"
+                )
+
             raise RuntimeError("Browser context is not available or has been closed.")
 
         # First navigate to the calendar page to establish session context
