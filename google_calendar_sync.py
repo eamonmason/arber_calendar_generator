@@ -1,6 +1,7 @@
 """Google Calendar synchronization module."""
 
 import hashlib
+import logging
 import time
 from datetime import datetime
 from typing import Any
@@ -12,6 +13,9 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from config import config
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # Google Calendar API scopes
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
@@ -55,13 +59,13 @@ class GoogleCalendarSync:
                 try:
                     creds.refresh(Request())
                 except Exception as e:
-                    print(f"Failed to refresh credentials: {e}")
+                    logger.error(f"Failed to refresh credentials: {e}")
                     creds = None
 
             if not creds:
                 if not credentials_path.exists():
-                    print(f"Credentials file not found at {credentials_path}")
-                    print(
+                    logger.warning(f"Credentials file not found at {credentials_path}")
+                    logger.error(
                         "Please run the setup script first or set up OAuth2 credentials manually."
                     )
                     return False
@@ -72,7 +76,7 @@ class GoogleCalendarSync:
                     )
                     creds = flow.run_local_server(port=0)
                 except Exception as e:
-                    print(f"Failed to authenticate: {e}")
+                    logger.error(f"Failed to authenticate: {e}")
                     return False
 
             # Save the credentials for the next run
@@ -81,7 +85,7 @@ class GoogleCalendarSync:
                 with open(token_path, "w") as token:
                     token.write(creds.to_json())
             except Exception as e:
-                print(f"Warning: Could not save token: {e}")
+                logger.warning(f"Could not save token: {e}")
 
         self._credentials = creds
 
@@ -90,13 +94,13 @@ class GoogleCalendarSync:
             # Test the connection
             if self.service:
                 self.service.calendars().get(calendarId=self.calendar_id).execute()
-            print("Successfully authenticated with Google Calendar")
+            logger.info("Successfully authenticated with Google Calendar")
             return True
         except HttpError as e:
-            print(f"Failed to connect to Google Calendar: {e}")
+            logger.error(f"Failed to connect to Google Calendar: {e}")
             return False
         except Exception as e:
-            print(f"Authentication error: {e}")
+            logger.error(f"Authentication error: {e}")
             return False
 
     def generate_event_id(self, lesson: dict[str, Any]) -> str:
@@ -216,11 +220,11 @@ class GoogleCalendarSync:
                 ):
                     events.append(event)
 
-            print(f"Found {len(events)} existing Arbor events in Google Calendar")
+            logger.info(f"Found {len(events)} existing Arbor events in Google Calendar")
             return events
 
         except HttpError as e:
-            print(f"Failed to fetch existing events: {e}")
+            logger.error(f"Failed to fetch existing events: {e}")
             return []
 
     def reconcile_events(
@@ -330,7 +334,7 @@ class GoogleCalendarSync:
         if not self.service:
             raise RuntimeError("Not authenticated. Call authenticate() first.")
 
-        print("Fetching existing events...")
+        logger.info("Fetching existing events...")
         # Use date range from lessons
         if not arbor_lessons:
             return {"created": 0, "updated": 0, "deleted": 0}
@@ -342,7 +346,7 @@ class GoogleCalendarSync:
 
         existing_events = self.fetch_existing_events(range_start, range_end)
 
-        print("Reconciling events...")
+        logger.info("Reconciling events...")
         events_to_create, events_to_update, event_ids_to_delete = self.reconcile_events(
             arbor_lessons, existing_events
         )
@@ -353,12 +357,12 @@ class GoogleCalendarSync:
             "deleted": len(event_ids_to_delete),
         }
 
-        print(
+        logger.info(
             f"Plan: Create {stats['created']}, Update {stats['updated']}, Delete {stats['deleted']} events"
         )
 
         if dry_run:
-            print("Dry run mode - no changes made")
+            logger.info("Dry run mode - no changes made")
             return stats
 
         # Execute changes
@@ -366,7 +370,9 @@ class GoogleCalendarSync:
             # Create new events with rate limiting
             for i, event in enumerate(events_to_create):
                 if i > 0 and i % 10 == 0:
-                    print(f"  Created {i}/{len(events_to_create)} events, pausing...")
+                    logger.info(
+                        f"  Created {i}/{len(events_to_create)} events, pausing..."
+                    )
                     time.sleep(1)  # Pause after every 10 events
 
                 # Create event without custom ID (Google will generate one)
@@ -378,7 +384,9 @@ class GoogleCalendarSync:
             # Update existing events with rate limiting
             for i, event in enumerate(events_to_update):
                 if i > 0 and i % 10 == 0:
-                    print(f"  Updated {i}/{len(events_to_update)} events, pausing...")
+                    logger.info(
+                        f"  Updated {i}/{len(events_to_update)} events, pausing..."
+                    )
                     time.sleep(1)
 
                 self.service.events().update(
@@ -389,7 +397,7 @@ class GoogleCalendarSync:
             # Delete orphaned events with rate limiting
             for i, event_id in enumerate(event_ids_to_delete):
                 if i > 0 and i % 10 == 0:
-                    print(
+                    logger.info(
                         f"  Deleted {i}/{len(event_ids_to_delete)} events, pausing..."
                     )
                     time.sleep(1)
@@ -399,12 +407,12 @@ class GoogleCalendarSync:
                 ).execute()
                 time.sleep(0.1)
 
-            print(
+            logger.info(
                 f"Successfully synced events: Created {stats['created']}, Updated {stats['updated']}, Deleted {stats['deleted']}"
             )
 
         except HttpError as e:
-            print(f"Error during sync: {e}")
+            logger.info(f"Error during sync: {e}")
             raise
 
         return stats

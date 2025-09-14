@@ -12,6 +12,7 @@ import argparse
 import asyncio
 import datetime
 import json
+import logging
 import os
 from typing import Any
 
@@ -21,6 +22,9 @@ import icalendar
 from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 
 from config import config
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 
 def get_academic_year_dates(
@@ -82,11 +86,11 @@ class ArborCalendarGenerator:
 
         # Debug: Show Playwright and browser information in Lambda
         if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
-            print("=== DEBUG: Playwright runtime information ===")
-            print(
+            logger.debug("=== DEBUG: Playwright runtime information ===")
+            logger.debug(
                 f"   PLAYWRIGHT_BROWSERS_PATH: {os.environ.get('PLAYWRIGHT_BROWSERS_PATH', 'Not set')}"
             )
-            print(
+            logger.debug(
                 f"   PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS: {os.environ.get('PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS', 'Not set')}"
             )
 
@@ -95,7 +99,7 @@ class ArborCalendarGenerator:
                 "PLAYWRIGHT_BROWSERS_PATH", "/tmp/playwright-browsers"
             )
             if os.path.exists(browsers_path):
-                print(f"   Browsers directory exists: {browsers_path}")
+                logger.debug(f"   Browsers directory exists: {browsers_path}")
                 import subprocess
 
                 result = subprocess.run(
@@ -103,10 +107,10 @@ class ArborCalendarGenerator:
                     capture_output=True,
                     text=True,
                 )
-                print(f"   Chrome binaries found: {result.stdout.strip()}")
+                logger.debug(f"   Chrome binaries found: {result.stdout.strip()}")
             else:
-                print(f"   Browsers directory MISSING: {browsers_path}")
-            print("==============================================")
+                logger.warning(f"   Browsers directory MISSING: {browsers_path}")
+            logger.debug("==============================================")
 
         # Add Lambda-specific browser arguments with more aggressive resource reduction
         launch_args = []
@@ -147,7 +151,7 @@ class ArborCalendarGenerator:
                 )
                 break
             except Exception as e:
-                print(f"   Browser launch attempt {attempt + 1} failed: {e}")
+                logger.warning(f"   Browser launch attempt {attempt + 1} failed: {e}")
                 if attempt == max_retries - 1:
                     raise RuntimeError(
                         f"Failed to launch browser after {max_retries} attempts: {e}"
@@ -186,27 +190,27 @@ class ArborCalendarGenerator:
                 self.page = await self.context.new_page()
                 break
             except Exception as e:
-                print(f"   Context creation attempt {attempt + 1} failed: {e}")
+                logger.warning(f"   Context creation attempt {attempt + 1} failed: {e}")
                 if attempt == max_retries - 1:
                     raise RuntimeError(
                         f"Failed to create browser context after {max_retries} attempts: {e}"
                     ) from e
                 await asyncio.sleep(1)  # Wait before retry
-        print("✅ Browser started successfully")
-        print(f"   Context created: {self.context is not None}")
-        print(
+        logger.info("✅ Browser started successfully")
+        logger.debug(f"   Context created: {self.context is not None}")
+        logger.debug(
             f"   Context closed status: {getattr(self.context, '_closed', 'unknown')}"
         )
-        print(f"   Page created: {self.page is not None}")
-        print(f"   Page closed: {self.page.is_closed() if self.page else 'N/A'}")
+        logger.debug(f"   Page created: {self.page is not None}")
+        logger.debug(f"   Page closed: {self.page.is_closed() if self.page else 'N/A'}")
 
         # Test context immediately after creation
         try:
             if self.page:
                 await self.page.evaluate("() => document.title")
-                print("   ✓ Context validation: Page evaluation successful")
+                logger.debug("   ✓ Context validation: Page evaluation successful")
         except Exception as e:
-            print(f"   ❌ Context validation failed immediately: {e}")
+            logger.error(f"   ❌ Context validation failed immediately: {e}")
             raise RuntimeError(
                 f"Browser context failed validation immediately after creation: {e}"
             ) from e
@@ -217,7 +221,7 @@ class ArborCalendarGenerator:
             if hasattr(self, "page") and self.page and not self.page.is_closed():
                 await self.page.close()
         except Exception as e:
-            print(f"Warning: Error closing page: {e}")
+            logger.warning(f"Error closing page: {e}")
 
         try:
             if (
@@ -227,13 +231,13 @@ class ArborCalendarGenerator:
             ):
                 await self.context.close()
         except Exception as e:
-            print(f"Warning: Error closing context: {e}")
+            logger.warning(f"Error closing context: {e}")
 
         try:
             if hasattr(self, "browser") and self.browser:
                 await self.browser.close()
         except Exception as e:
-            print(f"Warning: Error closing browser: {e}")
+            logger.warning(f"Error closing browser: {e}")
 
         # Reset references
         self.page = None
@@ -247,22 +251,26 @@ class ArborCalendarGenerator:
 
         # Check context before navigation with more detailed debugging
         if not self.context or getattr(self.context, "_closed", True):
-            print("❌ CRITICAL: Browser context validation failed before login")
-            print(f"   Context exists: {self.context is not None}")
+            logger.critical(
+                "❌ CRITICAL: Browser context validation failed before login"
+            )
+            logger.debug(f"   Context exists: {self.context is not None}")
             if self.context:
-                print(
+                logger.debug(
                     f"   Context closed: {getattr(self.context, '_closed', 'unknown')}"
                 )
-            print(f"   Page exists: {self.page is not None}")
+            logger.debug(f"   Page exists: {self.page is not None}")
             if self.page:
-                print(f"   Page closed: {self.page.is_closed()}")
+                logger.debug(f"   Page closed: {self.page.is_closed()}")
 
             # In Lambda, try to recreate context if it was closed
             if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
-                print("   Lambda environment detected - attempting context recovery")
+                logger.info(
+                    "   Lambda environment detected - attempting context recovery"
+                )
                 try:
                     if self.browser and not getattr(self.browser, "_closed", True):
-                        print("   Browser still exists, recreating context...")
+                        logger.debug("   Browser still exists, recreating context...")
                         # Recreate context with same options as before
                         self.context = await self.browser.new_context(
                             ignore_https_errors=True,
@@ -275,14 +283,14 @@ class ArborCalendarGenerator:
                         )
                         self.context.set_default_timeout(90000)
                         self.page = await self.context.new_page()
-                        print("   ✅ Context recovery successful")
+                        logger.info("   ✅ Context recovery successful")
                     else:
-                        print("   ❌ Browser also closed, cannot recover")
+                        logger.error("   ❌ Browser also closed, cannot recover")
                         raise RuntimeError(
                             "Both browser and context were closed - full restart required"
                         )
                 except Exception as recovery_error:
-                    print(f"   ❌ Context recovery failed: {recovery_error}")
+                    logger.error(f"   ❌ Context recovery failed: {recovery_error}")
                     raise RuntimeError(
                         f"Browser context was closed and recovery failed: {recovery_error}"
                     ) from recovery_error
@@ -290,9 +298,9 @@ class ArborCalendarGenerator:
                 raise RuntimeError("Browser context was closed before login navigation")
 
         # Try base URL first since /auth/login might be broken
-        print(f"Navigating to Arbor base URL: {config.arbor_base_url}")
+        logger.info(f"Navigating to Arbor base URL: {config.arbor_base_url}")
         await self.page.goto(config.arbor_base_url)
-        print("✅ Navigation to Arbor base URL completed")
+        logger.info("✅ Navigation to Arbor base URL completed")
 
         # Check context after navigation
         if not self.context or getattr(self.context, "_closed", True):
@@ -303,28 +311,30 @@ class ArborCalendarGenerator:
         password = config.arbor_password
 
         if username and password:
-            print("Attempting automatic login with provided credentials...")
+            logger.info("Attempting automatic login with provided credentials...")
             try:
                 await self._automatic_login(username, password)
-                print("Automatic login completed!")
+                logger.info("Automatic login completed!")
             except Exception as e:
-                print(f"Automatic login failed: {e}")
+                logger.error(f"Automatic login failed: {e}")
                 # Check if we're in Lambda environment - don't try manual login
                 if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
-                    print("Running in Lambda environment, cannot perform manual login.")
+                    logger.error(
+                        "Running in Lambda environment, cannot perform manual login."
+                    )
                     raise RuntimeError(
                         f"Automatic login failed in Lambda environment: {e}"
                     ) from e
-                print("Falling back to manual login...")
+                logger.info("Falling back to manual login...")
                 await self._manual_login()
         else:
             # Check if we're in Lambda environment - don't try manual login
             if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
-                print("No credentials provided in Lambda environment.")
+                logger.error("No credentials provided in Lambda environment.")
                 raise RuntimeError(
                     "Cannot perform manual login in Lambda environment. Please provide ARBOR_USERNAME and ARBOR_PASSWORD."
                 )
-            print("No credentials provided, using manual login...")
+            logger.info("No credentials provided, using manual login...")
             await self._manual_login()
 
         # Verify we're logged in by checking for common elements
@@ -332,9 +342,9 @@ class ArborCalendarGenerator:
             await self.page.wait_for_selector(
                 ".header, .navigation, .main-content", timeout=10000
             )
-            print("Login successful!")
+            logger.info("Login successful!")
         except Exception:
-            print("Warning: Could not verify login status. Continuing anyway...")
+            logger.warning("Could not verify login status. Continuing anyway...")
 
     async def _automatic_login(self, username: str, password: str) -> None:
         """Attempt automatic login with provided credentials."""
@@ -432,8 +442,8 @@ class ArborCalendarGenerator:
 
     async def _manual_login(self) -> None:
         """Perform manual login process."""
-        print("Please log in to Arbor in the browser window...")
-        print(
+        logger.info("Please log in to Arbor in the browser window...")
+        logger.info(
             "Press Enter once you have successfully logged in and are on the main page."
         )
 
@@ -444,10 +454,12 @@ class ArborCalendarGenerator:
             try:
                 input("Press Enter to continue after logging in...")
             except (EOFError, KeyboardInterrupt):
-                print("Login cancelled or failed.")
+                logger.error("Login cancelled or failed.")
                 raise
         else:
-            print("Running in non-interactive mode, assuming login is completed...")
+            logger.info(
+                "Running in non-interactive mode, assuming login is completed..."
+            )
             # Add a small delay to allow any auto-login to complete
             await asyncio.sleep(2)
 
@@ -459,25 +471,27 @@ class ArborCalendarGenerator:
             raise RuntimeError("Browser page is not available or has been closed.")
 
         if not self.context or getattr(self.context, "_closed", True):
-            print("❌ CRITICAL: Browser context is not available or has been closed.")
-            print(f"   Context exists: {self.context is not None}")
+            logger.critical(
+                "❌ CRITICAL: Browser context is not available or has been closed."
+            )
+            logger.debug(f"   Context exists: {self.context is not None}")
             if self.context:
-                print(
+                logger.debug(
                     f"   Context closed: {getattr(self.context, '_closed', 'unknown')}"
                 )
-            print(f"   Page exists: {self.page is not None}")
+            logger.debug(f"   Page exists: {self.page is not None}")
             if self.page:
-                print(f"   Page closed: {self.page.is_closed()}")
-            print(
+                logger.debug(f"   Page closed: {self.page.is_closed()}")
+            logger.error(
                 "   This suggests the browser was closed during operation or failed to initialize properly"
             )
 
             # Check if we're in Lambda - provide specific guidance
             if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
-                print(
+                logger.error(
                     "   Lambda environment detected - this may be a browser initialization issue"
                 )
-                print(
+                logger.info(
                     "   Consider increasing Lambda timeout or checking browser launch arguments"
                 )
 
@@ -485,7 +499,7 @@ class ArborCalendarGenerator:
 
         # First navigate to the calendar page to establish session context
         calendar_page_url = f"{config.arbor_base_url}/calendar-entry/list/"
-        print(f"Navigating to calendar page: {calendar_page_url}")
+        logger.info(f"Navigating to calendar page: {calendar_page_url}")
         await self.page.goto(calendar_page_url)
 
         # Wait a moment for the page to load
@@ -498,12 +512,12 @@ class ArborCalendarGenerator:
         all_entries = []
         current_date = start_date
 
-        print(f"Fetching calendar entries from {start_date} to {end_date}")
+        logger.info(f"Fetching calendar entries from {start_date} to {end_date}")
 
         while current_date <= end_date:
             # Check if page is still valid before making request
             if not self.page or self.page.is_closed():
-                print("Warning: Page was closed during calendar fetching, stopping...")
+                logger.warning("Page was closed during calendar fetching, stopping...")
                 break
 
             # Use the correct URL format: /date/YYYY-MM-DD (not query parameters)
@@ -519,15 +533,15 @@ class ArborCalendarGenerator:
                     items = day_data.get("items", [])
 
                     if items:
-                        print(f"  {current_date}: Found {len(items)} entries")
+                        logger.debug(f"  {current_date}: Found {len(items)} entries")
                         all_entries.extend(items)
                     else:
-                        print(f"  {current_date}: No entries")
+                        logger.debug(f"  {current_date}: No entries")
                 else:
-                    print(f"  {current_date}: HTTP Error {response.status}")
+                    logger.warning(f"  {current_date}: HTTP Error {response.status}")
 
             except Exception as e:
-                print(f"  {current_date}: Error - {e}")
+                logger.error(f"  {current_date}: Error - {e}")
 
             # Move to next day
             current_date += datetime.timedelta(days=1)
@@ -535,7 +549,7 @@ class ArborCalendarGenerator:
             # Small delay to avoid overwhelming the API
             await asyncio.sleep(0.1)
 
-        print(f"Total entries found: {len(all_entries)}")
+        logger.info(f"Total entries found: {len(all_entries)}")
 
         # Return in the format expected by the rest of the code
         return {"items": all_entries, "success": True, "total": len(all_entries)}
@@ -551,7 +565,7 @@ class ArborCalendarGenerator:
             return lessons
 
         total_entries = len(entries["items"])
-        print(
+        logger.info(
             f"Fetching detailed information for a sample of {min(50, total_entries)} lessons to test teacher extraction..."
         )
 
@@ -580,18 +594,20 @@ class ArborCalendarGenerator:
 
                 # Progress indicator every 10 lessons
                 if (i + 1) % 10 == 0:
-                    print(f"  Processed {i + 1}/{sample_size} detailed lessons...")
+                    logger.debug(
+                        f"  Processed {i + 1}/{sample_size} detailed lessons..."
+                    )
 
                 # Small delay to avoid overwhelming the server
                 await asyncio.sleep(0.2)
 
             except Exception as e:
-                print(f"Warning: Failed to parse calendar entry {i + 1}: {e}")
+                logger.warning(f"Failed to parse calendar entry {i + 1}: {e}")
                 continue
 
         # For remaining lessons, just use basic extraction without detailed fetching
         if total_entries > sample_size:
-            print(
+            logger.info(
                 f"Processing remaining {total_entries - sample_size} lessons with basic extraction..."
             )
             for item in entries["items"][sample_size:]:
@@ -603,7 +619,7 @@ class ArborCalendarGenerator:
                     basic_lesson = self.extract_basic_lesson_from_fields(item["fields"])
                     lessons.append(basic_lesson)
                 except Exception as e:
-                    print(f"Warning: Failed to parse basic calendar entry: {e}")
+                    logger.warning(f"Failed to parse basic calendar entry: {e}")
                     continue
 
         return lessons
@@ -625,10 +641,10 @@ class ArborCalendarGenerator:
             self._debug_field_count: int = 1
 
         if self._debug_field_count <= 3:
-            print(f"Debug - Available fields: {list(fields.keys())}")
+            logger.debug(f"Debug - Available fields: {list(fields.keys())}")
             for field_name, field_data in fields.items():
                 if isinstance(field_data, dict) and "value" in field_data:
-                    print(f"  {field_name}: {field_data['value']}")
+                    logger.debug(f"  {field_name}: {field_data['value']}")
 
         # Get the lesson title and extract subject
         title = get_field_value("title", "")
@@ -675,12 +691,12 @@ class ArborCalendarGenerator:
     async def get_detailed_lesson_info(self, detail_url: str) -> dict:
         """Fetch detailed lesson information including teacher from the lesson URL."""
         if not self.page or self.page.is_closed():
-            print("Warning: Page is closed, cannot fetch detailed lesson info")
+            logger.warning("Page is closed, cannot fetch detailed lesson info")
             return {"staff": "Teacher TBD"}
 
         if not self.context or getattr(self.context, "_closed", True):
-            print(
-                "Warning: Browser context is closed, cannot fetch detailed lesson info"
+            logger.warning(
+                "Browser context is closed, cannot fetch detailed lesson info"
             )
             return {"staff": "Teacher TBD"}
 
@@ -692,8 +708,8 @@ class ArborCalendarGenerator:
             response = await self.page.request.get(full_url)
 
             if not response.ok:
-                print(
-                    f"Warning: Failed to fetch lesson details from {full_url}: {response.status}"
+                logger.warning(
+                    f"Failed to fetch lesson details from {full_url}: {response.status}"
                 )
                 return {"staff": "Teacher TBD"}
 
@@ -706,9 +722,9 @@ class ArborCalendarGenerator:
                 self._debug_html_count: int = 1
 
             if self._debug_html_count <= 2:
-                print(f"Debug HTML structure for URL {detail_url}:")
-                print(f"HTML length: {len(html_content)} chars")
-                print(f"HTML preview (first 500 chars): {html_content[:500]}")
+                logger.debug(f"Debug HTML structure for URL {detail_url}:")
+                logger.debug(f"HTML length: {len(html_content)} chars")
+                logger.debug(f"HTML preview (first 500 chars): {html_content[:500]}")
 
             # Extract teacher information from HTML
             lesson_details = self.extract_lesson_details_new(html_content)
@@ -716,7 +732,7 @@ class ArborCalendarGenerator:
             return {"staff": lesson_details.get("staff", "Teacher TBD")}
 
         except Exception as e:
-            print(f"Warning: Error fetching lesson details from {detail_url}: {e}")
+            logger.warning(f"Error fetching lesson details from {detail_url}: {e}")
             return {"staff": "Teacher TBD"}
 
     async def get_calendar_entry(self, tooltip_url: str) -> str:
@@ -775,7 +791,7 @@ class ArborCalendarGenerator:
                                         if (
                                             self._debug_json_count <= 10
                                         ):  # Show more properties to understand structure
-                                            print(
+                                            logger.debug(
                                                 f"Found property: '{field_label}' = '{value}'"
                                             )
 
@@ -789,7 +805,7 @@ class ArborCalendarGenerator:
                                         ]:
                                             if value and value.strip():
                                                 result["staff"] = value.strip()
-                                                print(
+                                                logger.debug(
                                                     f"Found staff in '{field_label}': {result['staff']}"
                                                 )
 
@@ -801,7 +817,7 @@ class ArborCalendarGenerator:
                                         ):
                                             if value and value.strip():
                                                 result["staff"] = value.strip()
-                                                print(
+                                                logger.debug(
                                                     f"Found staff in '{field_label}': {result['staff']}"
                                                 )
 
@@ -829,7 +845,7 @@ class ArborCalendarGenerator:
                                 staff_name = match.group(1).strip()
                                 if len(staff_name) > 2:  # Avoid single letters
                                     result["staff"] = staff_name
-                                    print(
+                                    logger.debug(
                                         f"Found staff via JSON search with '{keyword}': {result['staff']}"
                                     )
                                     break
@@ -838,17 +854,17 @@ class ArborCalendarGenerator:
                             break
 
         except json.JSONDecodeError as e:
-            print(f"Failed to parse lesson detail JSON: {e}")
+            logger.warning(f"Failed to parse lesson detail JSON: {e}")
             # Fallback to treating it as HTML
             try:
                 # This shouldn't happen based on what we've seen, but just in case
                 # Could add HTML parsing fallback here if needed
                 bs.BeautifulSoup(content, "html.parser")
             except Exception as fallback_e:
-                print(f"Fallback HTML parsing also failed: {fallback_e}")
+                logger.warning(f"Fallback HTML parsing also failed: {fallback_e}")
 
         except Exception as e:
-            print(f"Error parsing lesson details: {e}")
+            logger.error(f"Error parsing lesson details: {e}")
 
         return result
 
@@ -953,10 +969,10 @@ class ArborCalendarGenerator:
             await self.start_browser(headless=headless)
             await self.interactive_login()
 
-            print("Fetching calendar entries...")
+            logger.info("Fetching calendar entries...")
             calendar_entries = await self.get_calendar_entries(start_date, end_date)
 
-            print(
+            logger.info(
                 f"Found {len(calendar_entries.get('items', []))} calendar entries. Processing..."
             )
 
@@ -966,15 +982,15 @@ class ArborCalendarGenerator:
             )
 
             if not lesson_list:
-                print("Warning: No lessons were successfully processed")
+                logger.warning("No lessons were successfully processed")
             else:
-                print("Sample lessons:")
+                logger.info("Sample lessons:")
                 for i, lesson in enumerate(lesson_list[:3]):
-                    print(
+                    logger.info(
                         f"  {i + 1}. {lesson['subject']} at {lesson['from_date']} in {lesson['class_location']}"
                     )
 
-            print(f"Successfully fetched {len(lesson_list)} lessons from Arbor")
+            logger.info(f"Successfully fetched {len(lesson_list)} lessons from Arbor")
             return lesson_list
 
         finally:
@@ -1017,8 +1033,28 @@ def get_cli_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def configure_logging() -> None:
+    """Configure logging for the application."""
+    # Get log level from environment variable or default to INFO
+    log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
+
+    # Configure root logger
+    logging.basicConfig(
+        level=getattr(logging, log_level, logging.INFO),
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        force=True,
+    )
+
+    # Set appropriate log levels
+    logging.getLogger(__name__).setLevel(logging.INFO)
+    logging.getLogger("google_calendar_sync").setLevel(logging.INFO)
+
+
 async def main() -> None:
     """Main entry point."""
+    # Configure logging first
+    configure_logging()
+
     args = get_cli_args()
 
     # Determine date range
@@ -1027,16 +1063,16 @@ async def main() -> None:
             start_date = datetime.datetime.strptime(args.start_date, "%Y-%m-%d").date()
             end_date = datetime.datetime.strptime(args.end_date, "%Y-%m-%d").date()
         except ValueError as e:
-            print(f"Error parsing dates: {e}")
+            logger.error(f"Error parsing dates: {e}")
             return
 
         if start_date > end_date:
-            print("Error: Start date must be before or equal to end date")
+            logger.error("Error: Start date must be before or equal to end date")
             return
     else:
         # Use academic year dates
         start_date, end_date = get_academic_year_dates(args.academic_year)
-        print(f"Using academic year dates: {start_date} to {end_date}")
+        logger.info(f"Using academic year dates: {start_date} to {end_date}")
 
     # Fetch lessons from Arbor
     generator = ArborCalendarGenerator()
@@ -1045,20 +1081,20 @@ async def main() -> None:
     )
 
     if not lessons:
-        print("No lessons found. Exiting.")
+        logger.error("No lessons found. Exiting.")
         return
 
-    print(f"Fetched {len(lessons)} lessons from Arbor")
+    logger.info(f"Fetched {len(lessons)} lessons from Arbor")
 
     # Print lesson summary
-    print("\nLesson summary:")
+    logger.info("\nLesson summary:")
     subjects: dict[str, int] = {}
     for lesson in lessons:
         subject = lesson["subject"]
         subjects[subject] = subjects.get(subject, 0) + 1
 
     for subject, count in sorted(subjects.items()):
-        print(f"  {subject}: {count} lessons")
+        logger.info(f"  {subject}: {count} lessons")
 
     # Import dependencies
     try:
@@ -1071,7 +1107,7 @@ async def main() -> None:
         )
 
         # Sync with Google Calendar
-        print(f"\nSyncing to Google Calendar '{calendar_id}'...")
+        logger.info(f"\nSyncing to Google Calendar '{calendar_id}'...")
 
         # Override config settings if provided via CLI
         if args.calendar_id:
@@ -1082,29 +1118,29 @@ async def main() -> None:
 
         # Authenticate with Google
         if not calendar_sync.authenticate():
-            print("Failed to authenticate with Google Calendar.")
-            print("Please run the setup script first:")
-            print("  python setup_google_auth.py <path_to_credentials_file>")
+            logger.error("Failed to authenticate with Google Calendar.")
+            logger.error("Please run the setup script first:")
+            logger.error("  python setup_google_auth.py <path_to_credentials_file>")
             return
 
         # Perform the sync
         stats = calendar_sync.sync_events(lessons, dry_run=args.dry_run)
 
         if args.dry_run:
-            print("Dry run completed - no actual changes were made")
+            logger.info("Dry run completed - no actual changes were made")
         else:
-            print("Sync completed successfully!")
+            logger.info("Sync completed successfully!")
 
-        print(f"Events created: {stats['created']}")
-        print(f"Events updated: {stats['updated']}")
-        print(f"Events deleted: {stats['deleted']}")
+        logger.info(f"Events created: {stats['created']}")
+        logger.info(f"Events updated: {stats['updated']}")
+        logger.info(f"Events deleted: {stats['deleted']}")
 
     except ImportError as e:
-        print(f"Failed to import required modules: {e}")
-        print("Please install the required dependencies:")
-        print("  uv sync")
+        logger.error(f"Failed to import required modules: {e}")
+        logger.error("Please install the required dependencies:")
+        logger.error("  uv sync")
     except Exception as e:
-        print(f"Sync failed: {e}")
+        logger.error(f"Sync failed: {e}")
         raise
 
 

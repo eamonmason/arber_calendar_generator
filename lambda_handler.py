@@ -16,6 +16,7 @@ Usage:
 import asyncio
 import datetime
 import json
+import logging
 import os
 import sys
 import tempfile
@@ -29,6 +30,9 @@ from config import config
 from generate_school_calendar import ArborCalendarGenerator, get_academic_year_dates
 from google_calendar_sync import GoogleCalendarSync
 
+# Configure logging
+logger = logging.getLogger(__name__)
+
 
 def get_parameter_from_aws(parameter_name: str) -> Any:
     """Retrieve parameter from AWS Systems Manager Parameter Store."""
@@ -37,12 +41,12 @@ def get_parameter_from_aws(parameter_name: str) -> Any:
         from botocore.exceptions import ClientError
 
         ssm_client = boto3.client("ssm")
-        print(f"Attempting to get parameter: {parameter_name}")
+        logger.debug(f"Attempting to get parameter: {parameter_name}")
         response = ssm_client.get_parameter(Name=parameter_name, WithDecryption=True)
 
         # For JSON parameters, parse the value
         parameter_value = response["Parameter"]["Value"]
-        print(
+        logger.debug(
             f"Successfully retrieved parameter {parameter_name} (length: {len(parameter_value)})"
         )
         try:
@@ -52,13 +56,13 @@ def get_parameter_from_aws(parameter_name: str) -> Any:
             return parameter_value
     except ImportError:
         # boto3 not available (local execution)
-        print(f"boto3 not available for parameter {parameter_name}")
+        logger.debug(f"boto3 not available for parameter {parameter_name}")
         return None
     except ClientError as e:
-        print(f"ClientError retrieving parameter {parameter_name}: {e}")
+        logger.error(f"ClientError retrieving parameter {parameter_name}: {e}")
         return None
     except Exception as e:
-        print(f"Unexpected error retrieving parameter {parameter_name}: {e}")
+        logger.error(f"Unexpected error retrieving parameter {parameter_name}: {e}")
         return None
 
 
@@ -68,10 +72,10 @@ def setup_aws_credentials() -> None:
     if not os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
         return  # Not in Lambda, use local credentials
 
-    print("Running in AWS Lambda, retrieving credentials from Parameter Store...")
+    logger.info("Running in AWS Lambda, retrieving credentials from Parameter Store...")
 
     # AWS credentials are validated when we actually call GetParameter below
-    print("✓ AWS Lambda environment detected, will use Parameter Store")
+    logger.info("✓ AWS Lambda environment detected, will use Parameter Store")
 
     # Track what credentials we successfully load
     credentials_loaded = {
@@ -93,7 +97,7 @@ def setup_aws_credentials() -> None:
             with open(credentials_path, "w") as f:
                 json.dump(google_creds, f)
             os.environ["GOOGLE_CREDENTIALS_PATH"] = str(credentials_path)
-            print("✓ Google credentials loaded from Parameter Store")
+            logger.info("✓ Google credentials loaded from Parameter Store")
             credentials_loaded["google_credentials"] = True
 
     # Get Google token
@@ -105,39 +109,39 @@ def setup_aws_credentials() -> None:
             with open(token_path, "w") as f:
                 json.dump(google_token, f)
             os.environ["GOOGLE_TOKEN_PATH"] = str(token_path)
-            print("✓ Google token loaded from Parameter Store")
+            logger.info("✓ Google token loaded from Parameter Store")
             credentials_loaded["google_token"] = True
 
     # Get Arbor username
     arbor_username_param = os.environ.get("ARBOR_USERNAME_PARAMETER")
-    print(f"Looking for Arbor username parameter: {arbor_username_param}")
+    logger.info(f"Looking for Arbor username parameter: {arbor_username_param}")
     if arbor_username_param:
         arbor_username = get_parameter_from_aws(arbor_username_param)
         if arbor_username:
             os.environ["ARBOR_USERNAME"] = arbor_username
-            print("✓ Arbor username loaded from Parameter Store")
+            logger.info("✓ Arbor username loaded from Parameter Store")
             credentials_loaded["arbor_username"] = True
         else:
-            print(f"❌ Failed to load Arbor username from {arbor_username_param}")
+            logger.info(f"❌ Failed to load Arbor username from {arbor_username_param}")
     else:
-        print("❌ ARBOR_USERNAME_PARAMETER environment variable not set")
+        logger.info("❌ ARBOR_USERNAME_PARAMETER environment variable not set")
 
     # Get Arbor password
     arbor_password_param = os.environ.get("ARBOR_PASSWORD_PARAMETER")
-    print(f"Looking for Arbor password parameter: {arbor_password_param}")
+    logger.info(f"Looking for Arbor password parameter: {arbor_password_param}")
     if arbor_password_param:
         arbor_password = get_parameter_from_aws(arbor_password_param)
         if arbor_password:
             os.environ["ARBOR_PASSWORD"] = arbor_password
-            print("✓ Arbor password loaded from Parameter Store")
+            logger.info("✓ Arbor password loaded from Parameter Store")
             credentials_loaded["arbor_password"] = True
         else:
-            print(f"❌ Failed to load Arbor password from {arbor_password_param}")
+            logger.info(f"❌ Failed to load Arbor password from {arbor_password_param}")
     else:
-        print("❌ ARBOR_PASSWORD_PARAMETER environment variable not set")
+        logger.info("❌ ARBOR_PASSWORD_PARAMETER environment variable not set")
 
     # Summary of credential loading
-    print(f"\n📋 Credential loading summary: {credentials_loaded}")
+    logger.info(f"\n📋 Credential loading summary: {credentials_loaded}")
 
     # Check if we have the minimum required credentials for operation
     if (
@@ -146,8 +150,33 @@ def setup_aws_credentials() -> None:
     ):
         missing = [k for k, v in credentials_loaded.items() if not v and "arbor" in k]
         error_msg = f"Missing required Arbor credentials: {missing}. Cannot proceed with calendar sync."
-        print(f"❌ {error_msg}")
+        logger.info(f"❌ {error_msg}")
         raise RuntimeError(error_msg)
+
+
+def configure_logging() -> None:
+    """Configure logging for the application."""
+    # Get log level from environment variable or default to INFO
+    log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
+
+    # Configure root logger
+    logging.basicConfig(
+        level=getattr(logging, log_level, logging.INFO),
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        force=True,
+    )
+
+    # Set specific loggers to appropriate levels
+    if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+        # In Lambda, be more verbose for debugging
+        logging.getLogger("generate_school_calendar").setLevel(logging.DEBUG)
+        logging.getLogger("google_calendar_sync").setLevel(logging.DEBUG)
+        logging.getLogger(__name__).setLevel(logging.DEBUG)
+    else:
+        # Local execution, standard levels
+        logging.getLogger("generate_school_calendar").setLevel(logging.INFO)
+        logging.getLogger("google_calendar_sync").setLevel(logging.INFO)
+        logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 def lambda_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
@@ -162,8 +191,11 @@ def lambda_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]
         Dict with execution results
     """
     try:
-        print("Starting Arbor Calendar Sync Lambda execution...")
-        print(f"Event: {json.dumps(event, default=str)}")
+        # Configure logging first
+        configure_logging()
+
+        logger.info("Starting Arbor Calendar Sync Lambda execution...")
+        logger.info(f"Event: {json.dumps(event, default=str)}")
 
         # Set up AWS credentials (if running in Lambda)
         setup_aws_credentials()
@@ -191,7 +223,7 @@ def lambda_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]
             )
         )
 
-        print("Lambda execution completed successfully")
+        logger.info("Lambda execution completed successfully")
         return {
             "statusCode": 200,
             "body": json.dumps(
@@ -204,7 +236,7 @@ def lambda_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]
         }
 
     except Exception as e:
-        print(f"Lambda execution failed: {e}")
+        logger.info(f"Lambda execution failed: {e}")
         import traceback
 
         traceback.print_exc()
@@ -241,7 +273,7 @@ async def run_calendar_sync(
     Returns:
         Dict with sync results
     """
-    print("Determining date range...")
+    logger.info("Determining date range...")
 
     # Determine date range
     if start_date and end_date:
@@ -264,10 +296,10 @@ async def run_calendar_sync(
 
             # Handle case where we're past the academic year end
             if sync_start_date > sync_end_date:
-                print(
+                logger.info(
                     f"Current date ({today}) is past academic year end ({academic_year_end})"
                 )
-                print("No future events to sync. Exiting.")
+                logger.info("No future events to sync. Exiting.")
                 return {
                     "lessons_found": 0,
                     "events_created": 0,
@@ -276,25 +308,25 @@ async def run_calendar_sync(
                     "message": "Current date is past academic year end - no future events to sync",
                 }
 
-            print(
+            logger.info(
                 f"Lambda mode: Syncing from today ({sync_start_date}) to end of academic year ({sync_end_date})"
             )
         else:
             # Local execution: use full academic year dates
             sync_start_date, sync_end_date = get_academic_year_dates(academic_year)
-            print(
+            logger.info(
                 f"Local mode: Using full academic year dates: {sync_start_date} to {sync_end_date}"
             )
 
     # Fetch lessons from Arbor
-    print("Initializing Arbor calendar generator...")
+    logger.info("Initializing Arbor calendar generator...")
     generator = ArborCalendarGenerator()
     lessons = await generator.fetch_lessons(
         sync_start_date, sync_end_date, headless=headless
     )
 
     if not lessons:
-        print("No lessons found. Exiting.")
+        logger.info("No lessons found. Exiting.")
         return {
             "lessons_found": 0,
             "events_created": 0,
@@ -303,21 +335,21 @@ async def run_calendar_sync(
             "message": "No lessons found",
         }
 
-    print(f"Fetched {len(lessons)} lessons from Arbor")
+    logger.info(f"Fetched {len(lessons)} lessons from Arbor")
 
     # Print lesson summary
-    print("Lesson summary:")
+    logger.info("Lesson summary:")
     subjects: dict[str, int] = {}
     for lesson in lessons:
         subject = lesson["subject"]
         subjects[subject] = subjects.get(subject, 0) + 1
 
     for subject, count in sorted(subjects.items()):
-        print(f"  {subject}: {count} lessons")
+        logger.info(f"  {subject}: {count} lessons")
 
     # Sync with Google Calendar
     calendar_id = config.google_calendar_id
-    print(f"Syncing to Google Calendar '{calendar_id}'...")
+    logger.info(f"Syncing to Google Calendar '{calendar_id}'...")
 
     # Initialize Google Calendar sync
     calendar_sync = GoogleCalendarSync(calendar_id)
@@ -332,9 +364,9 @@ async def run_calendar_sync(
     stats = calendar_sync.sync_events(lessons, dry_run=dry_run)
 
     if dry_run:
-        print("Dry run completed - no actual changes were made")
+        logger.info("Dry run completed - no actual changes were made")
     else:
-        print("Sync completed successfully!")
+        logger.info("Sync completed successfully!")
 
     result = {
         "lessons_found": len(lessons),
@@ -346,9 +378,9 @@ async def run_calendar_sync(
         "subjects": subjects,
     }
 
-    print(f"Events created: {stats['created']}")
-    print(f"Events updated: {stats['updated']}")
-    print(f"Events deleted: {stats['deleted']}")
+    logger.info(f"Events created: {stats['created']}")
+    logger.info(f"Events updated: {stats['updated']}")
+    logger.info(f"Events deleted: {stats['deleted']}")
 
     return result
 
@@ -389,7 +421,10 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    print("Running Arbor Calendar Sync locally...")
+    # Configure logging first
+    configure_logging()
+
+    logger.info("Running Arbor Calendar Sync locally...")
 
     try:
         result = asyncio.run(
@@ -402,20 +437,20 @@ def main() -> None:
             )
         )
 
-        print("\n" + "=" * 50)
-        print("SYNC SUMMARY")
-        print("=" * 50)
-        print(f"Lessons found: {result['lessons_found']}")
-        print(f"Events created: {result['events_created']}")
-        print(f"Events updated: {result['events_updated']}")
-        print(f"Events deleted: {result['events_deleted']}")
-        print(f"Date range: {result['date_range']}")
+        logger.info("\n" + "=" * 50)
+        logger.info("SYNC SUMMARY")
+        logger.info("=" * 50)
+        logger.info(f"Lessons found: {result['lessons_found']}")
+        logger.info(f"Events created: {result['events_created']}")
+        logger.info(f"Events updated: {result['events_updated']}")
+        logger.info(f"Events deleted: {result['events_deleted']}")
+        logger.info(f"Date range: {result['date_range']}")
         if result["dry_run"]:
-            print("Mode: DRY RUN (no changes made)")
-        print("=" * 50)
+            logger.info("Mode: DRY RUN (no changes made)")
+        logger.info("=" * 50)
 
     except Exception as e:
-        print(f"Error: {e}")
+        logger.info(f"Error: {e}")
         import traceback
 
         traceback.print_exc()
