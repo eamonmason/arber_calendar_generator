@@ -103,8 +103,8 @@ jobs:
           --parameter-overrides \
             GoogleCredentialsParameter="${{ secrets.GOOGLE_CREDENTIALS_PARAMETER }}" \
             GoogleTokenParameter="${{ secrets.GOOGLE_TOKEN_PARAMETER }}" \
-            ArborUsernameParameter="${{ secrets.ARBOR_USERNAME_PARAMETER }}" \
-            ArborPasswordParameter="${{ secrets.ARBOR_PASSWORD_PARAMETER }}" \
+            ArborUsername="${{ secrets.ARBOR_USERNAME }}" \
+            ArborPassword="${{ secrets.ARBOR_PASSWORD }}" \
             GoogleCalendarId="${{ secrets.GOOGLE_CALENDAR_ID }}" \
             ArborBaseUrl="${{ secrets.ARBOR_BASE_URL }}" \
             ArborStudentObjectId="${{ secrets.ARBOR_STUDENT_OBJECT_ID }}" \

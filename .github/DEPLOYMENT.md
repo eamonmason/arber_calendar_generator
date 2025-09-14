@@ -103,8 +103,8 @@ Add the following **Repository Secrets**:
 | `AWS_ROLE_ARN` | IAM role ARN for GitHub Actions | `arn:aws:iam::123456789012:role/GitHubActionsRole` |
 | `GOOGLE_CREDENTIALS_PARAMETER` | Parameter Store path for Google credentials | `/arbor-calendar-sync/google-credentials` |
 | `GOOGLE_TOKEN_PARAMETER` | Parameter Store path for Google token | `/arbor-calendar-sync/google-token` |
-| `ARBOR_USERNAME_PARAMETER` | Parameter Store path for Arbor username | `/arbor-calendar-sync/arbor-username` |
-| `ARBOR_PASSWORD_PARAMETER` | Parameter Store path for Arbor password | `/arbor-calendar-sync/arbor-password` |
+| `ARBOR_USERNAME` | Arbor username for login | `your.username@example.com` |
+| `ARBOR_PASSWORD` | Arbor password for login | `your-password` |
 | `GOOGLE_CALENDAR_ID` | Google Calendar ID | `abc123@group.calendar.google.com` |
 | `ARBOR_BASE_URL` | Arbor system URL | `https://your-school.uk.arbor.sc` |
 | `ARBOR_STUDENT_OBJECT_ID` | Student object ID | `1234` |
