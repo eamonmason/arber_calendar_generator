@@ -79,12 +79,7 @@ jobs:
         aws-region: ${{ env.AWS_REGION }}
         role-session-name: GitHubActions-ArborCalendarSync
 
-    - name: Set up QEMU for multi-platform builds
-      uses: docker/setup-qemu-action@v3
-      with:
-        platforms: arm64
-
-    - name: Set up Docker Buildx for multi-platform builds
+    - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
     - name: Build SAM application
