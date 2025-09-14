@@ -62,17 +62,8 @@ def setup_aws_credentials() -> None:
 
     print("Running in AWS Lambda, retrieving credentials from Parameter Store...")
 
-    # Check if we have proper AWS credentials
-    try:
-        import boto3
-
-        ssm = boto3.client("ssm")
-        # Test basic AWS access
-        ssm.describe_parameters(MaxResults=1)
-        print("✓ AWS credentials are valid")
-    except Exception as e:
-        print(f"❌ AWS credential error: {e}")
-        raise RuntimeError(f"Cannot access AWS Parameter Store: {e}") from e
+    # AWS credentials are validated when we actually call GetParameter below
+    print("✓ AWS Lambda environment detected, will use Parameter Store")
 
     # Create temporary directory for credential files
     temp_dir = Path(tempfile.mkdtemp())
