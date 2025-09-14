@@ -144,6 +144,17 @@ class ArborCalendarGenerator:
                 "--disable-background-mode",
                 "--disable-plugins",
                 "--disable-images",  # Don't load images to save memory
+                # Note: JavaScript is required for Arbor website interaction
+                "--disable-accelerated-2d-canvas",  # Disable hardware acceleration
+                "--disable-accelerated-jpeg-decoding",
+                "--disable-accelerated-mjpeg-decode",
+                "--disable-accelerated-video-decode",
+                "--disable-3d-apis",  # Disable WebGL and 3D APIs
+                "--disable-smooth-scrolling",
+                "--disable-translate",
+                "--disable-ipc-flooding-protection",  # May help with Lambda environment
+                "--renderer-process-limit=1",  # Limit to single renderer process
+                "--max-gum-fps=5",  # Limit frame rate
             ]
 
         # More conservative browser launch in Lambda with retry logic
@@ -271,34 +282,28 @@ class ArborCalendarGenerator:
             if self.page:
                 logger.debug(f"   Page closed: {self.page.is_closed()}")
 
-            # In Lambda, try to recreate context if it was closed
+            # In Lambda, try to recreate the entire browser if context is closed
             if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
                 logger.info(
-                    "   Lambda environment detected - attempting context recovery"
+                    "   Lambda environment detected - attempting full browser restart"
                 )
                 try:
-                    if self.browser and not getattr(self.browser, "_closed", True):
-                        logger.debug("   Browser still exists, recreating context...")
-                        # Recreate context with same options as before
-                        self.context = await self.browser.new_context(
-                            ignore_https_errors=True,
-                            extra_http_headers={
-                                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                            },
-                            viewport={"width": 800, "height": 600},
-                            java_script_enabled=True,
-                            locale="en-US",
-                        )
-                        self.context.set_default_timeout(90000)
-                        self.page = await self.context.new_page()
-                        logger.info("   ✅ Context recovery successful")
-                    else:
-                        logger.error("   ❌ Browser also closed, cannot recover")
+                    # Close any remaining resources first
+                    await self.close_browser()
+
+                    # Restart the entire browser
+                    logger.info("   Restarting browser due to context closure...")
+                    await self.start_browser(headless=True)
+
+                    if not self.page or not self.context:
                         raise RuntimeError(
-                            "Both browser and context were closed - full restart required"
+                            "Failed to restart browser - context or page is None"
                         )
+
+                    logger.info("   ✅ Browser restart successful")
+
                 except Exception as recovery_error:
-                    logger.error(f"   ❌ Context recovery failed: {recovery_error}")
+                    logger.error(f"   ❌ Browser restart failed: {recovery_error}")
                     raise RuntimeError(
                         f"Browser context was closed and recovery failed: {recovery_error}"
                     ) from recovery_error
