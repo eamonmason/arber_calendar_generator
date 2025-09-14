@@ -52,7 +52,7 @@ Resources:
     Properties:
       Name: !Sub '/${AWS::StackName}/google/credentials'
       Description: 'Google OAuth credentials for Arbor Calendar Sync'
-      Type: String
+      Type: SecureString
       Value: !Sub |
         {
           "type": "placeholder",
@@ -72,7 +72,7 @@ Resources:
     Properties:
       Name: !Sub '/${AWS::StackName}/google/token'
       Description: 'Google OAuth token for Arbor Calendar Sync'
-      Type: String
+      Type: SecureString
       Value: !Sub |
         {
           "token": "placeholder",
@@ -89,7 +89,7 @@ Resources:
     Properties:
       Name: !Sub '/${AWS::StackName}/arbor/username'
       Description: 'Arbor username for calendar sync'
-      Type: String
+      Type: SecureString
       Value: !Ref ArborUsername
 
   ArborPasswordParameter:
@@ -97,7 +97,7 @@ Resources:
     Properties:
       Name: !Sub '/${AWS::StackName}/arbor/password'
       Description: 'Arbor password for calendar sync'
-      Type: String
+      Type: SecureString
       Value: !Ref ArborPassword
 
   # IAM Role for Lambda function
