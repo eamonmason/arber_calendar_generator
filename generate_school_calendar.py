@@ -80,7 +80,7 @@ class ArborCalendarGenerator:
 
         playwright = await async_playwright().start()
 
-        # Add Lambda-specific browser arguments
+        # Add Lambda-specific browser arguments with more aggressive resource reduction
         launch_args = []
         if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
             launch_args = [
@@ -97,23 +97,73 @@ class ArborCalendarGenerator:
                 "--disable-default-apps",
                 "--disable-background-networking",
                 "--disable-sync",
+                "--disable-web-security",  # Add for Lambda environment
+                "--disable-features=VizDisplayCompositor",  # Reduce memory usage
+                "--memory-pressure-off",  # Disable memory pressure notifications
+                "--max_old_space_size=1800",  # Limit Node.js memory (Lambda has 2048MB)
+                "--disable-background-mode",
+                "--disable-plugins",
+                "--disable-images",  # Don't load images to save memory
             ]
 
-        self.browser = await playwright.chromium.launch(
-            headless=headless, args=launch_args
-        )
+        # More conservative browser launch in Lambda with retry logic
+        max_retries = 3 if os.environ.get("AWS_LAMBDA_FUNCTION_NAME") else 1
+        for attempt in range(max_retries):
+            try:
+                self.browser = await playwright.chromium.launch(
+                    headless=headless,
+                    args=launch_args,
+                    timeout=30000
+                    if os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
+                    else 30000,
+                )
+                break
+            except Exception as e:
+                print(f"   Browser launch attempt {attempt + 1} failed: {e}")
+                if attempt == max_retries - 1:
+                    raise RuntimeError(
+                        f"Failed to launch browser after {max_retries} attempts: {e}"
+                    ) from e
+                await asyncio.sleep(2)  # Wait before retry
 
         # Set longer timeout for Lambda environment
-        browser_timeout = 60000 if os.environ.get("AWS_LAMBDA_FUNCTION_NAME") else 30000
+        browser_timeout = 90000 if os.environ.get("AWS_LAMBDA_FUNCTION_NAME") else 30000
 
-        self.context = await self.browser.new_context(
-            ignore_https_errors=True,  # Ignore SSL certificate errors
-            extra_http_headers={
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            },
-        )
-        self.context.set_default_timeout(browser_timeout)
-        self.page = await self.context.new_page()
+        # Retry context creation as well
+        for attempt in range(max_retries):
+            try:
+                if not self.browser:
+                    raise RuntimeError("Browser is None - cannot create context")
+
+                if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+                    # Lambda-specific context with proper types
+                    self.context = await self.browser.new_context(
+                        ignore_https_errors=True,
+                        extra_http_headers={
+                            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                        },
+                        viewport={"width": 800, "height": 600},
+                        java_script_enabled=True,
+                        locale="en-US",
+                    )
+                else:
+                    # Local context
+                    self.context = await self.browser.new_context(
+                        ignore_https_errors=True,
+                        extra_http_headers={
+                            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                        },
+                    )
+                self.context.set_default_timeout(browser_timeout)
+                self.page = await self.context.new_page()
+                break
+            except Exception as e:
+                print(f"   Context creation attempt {attempt + 1} failed: {e}")
+                if attempt == max_retries - 1:
+                    raise RuntimeError(
+                        f"Failed to create browser context after {max_retries} attempts: {e}"
+                    ) from e
+                await asyncio.sleep(1)  # Wait before retry
         print("✅ Browser started successfully")
         print(f"   Context created: {self.context is not None}")
         print(
@@ -124,8 +174,9 @@ class ArborCalendarGenerator:
 
         # Test context immediately after creation
         try:
-            await self.page.evaluate("() => document.title")
-            print("   ✓ Context validation: Page evaluation successful")
+            if self.page:
+                await self.page.evaluate("() => document.title")
+                print("   ✓ Context validation: Page evaluation successful")
         except Exception as e:
             print(f"   ❌ Context validation failed immediately: {e}")
             raise RuntimeError(
@@ -166,9 +217,49 @@ class ArborCalendarGenerator:
         if not self.page:
             raise RuntimeError("Browser not started. Call start_browser() first.")
 
-        # Check context before navigation
+        # Check context before navigation with more detailed debugging
         if not self.context or getattr(self.context, "_closed", True):
-            raise RuntimeError("Browser context was closed before login navigation")
+            print("❌ CRITICAL: Browser context validation failed before login")
+            print(f"   Context exists: {self.context is not None}")
+            if self.context:
+                print(
+                    f"   Context closed: {getattr(self.context, '_closed', 'unknown')}"
+                )
+            print(f"   Page exists: {self.page is not None}")
+            if self.page:
+                print(f"   Page closed: {self.page.is_closed()}")
+
+            # In Lambda, try to recreate context if it was closed
+            if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+                print("   Lambda environment detected - attempting context recovery")
+                try:
+                    if self.browser and not getattr(self.browser, "_closed", True):
+                        print("   Browser still exists, recreating context...")
+                        # Recreate context with same options as before
+                        self.context = await self.browser.new_context(
+                            ignore_https_errors=True,
+                            extra_http_headers={
+                                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                            },
+                            viewport={"width": 800, "height": 600},
+                            java_script_enabled=True,
+                            locale="en-US",
+                        )
+                        self.context.set_default_timeout(90000)
+                        self.page = await self.context.new_page()
+                        print("   ✅ Context recovery successful")
+                    else:
+                        print("   ❌ Browser also closed, cannot recover")
+                        raise RuntimeError(
+                            "Both browser and context were closed - full restart required"
+                        )
+                except Exception as recovery_error:
+                    print(f"   ❌ Context recovery failed: {recovery_error}")
+                    raise RuntimeError(
+                        f"Browser context was closed and recovery failed: {recovery_error}"
+                    ) from recovery_error
+            else:
+                raise RuntimeError("Browser context was closed before login navigation")
 
         # Try base URL first since /auth/login might be broken
         print(f"Navigating to Arbor base URL: {config.arbor_base_url}")

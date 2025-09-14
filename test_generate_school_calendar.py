@@ -107,7 +107,7 @@ class TestArborCalendarGenerator:
 
             mock_playwright_instance.start.assert_called_once()
             mock_playwright_instance.chromium.launch.assert_called_once_with(
-                headless=True, args=[]
+                headless=True, args=[], timeout=30000
             )
             mock_browser.new_context.assert_called_once_with(
                 ignore_https_errors=True,
