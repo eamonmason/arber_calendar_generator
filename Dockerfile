@@ -1,6 +1,9 @@
-FROM public.ecr.aws/lambda/python:3.12
+FROM public.ecr.aws/lambda/python:3.12-arm64
 
-# Install browser dependencies
+# Install uv for dependency management
+RUN pip install uv
+
+# Install browser dependencies required for Playwright
 RUN dnf install -y \
     alsa-lib \
     at-spi2-atk \
@@ -28,15 +31,19 @@ RUN dnf install -y \
     pango \
     && dnf clean all
 
-# Copy requirements first for better caching
-COPY requirements.txt .
+# Copy dependency files and README for better caching
+COPY pyproject.toml uv.lock README.md ./
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies using uv, creating the virtual environment in-place
+ENV UV_PROJECT_ENVIRONMENT=${LAMBDA_TASK_ROOT}/.venv
+RUN uv sync --frozen
 
-# Install Playwright browsers in the Lambda task root so they persist
+# Add the virtual environment to Python path
+ENV PYTHONPATH="${LAMBDA_TASK_ROOT}/.venv/lib/python3.12/site-packages:${PYTHONPATH}"
+
+# Install Playwright browsers in the Lambda task root
 ENV PLAYWRIGHT_BROWSERS_PATH=${LAMBDA_TASK_ROOT}/playwright-browsers
-RUN playwright install chromium
+RUN ${LAMBDA_TASK_ROOT}/.venv/bin/playwright install chromium
 
 # Copy application code
 COPY . ${LAMBDA_TASK_ROOT}

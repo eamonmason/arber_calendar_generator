@@ -51,19 +51,21 @@ def sample_html_no_location():
 def sample_calendar_entries():
     """Sample calendar entries response from Arbor API."""
     return {
-        "items": [{
-            "fields": {
-                "response": {
-                    "value": {
-                        "pages": [
-                            {
-                                "html": 'Some content ajax-link="/tooltip/1" more content ajax-link="/tooltip/2" end'
-                            }
-                        ]
+        "items": [
+            {
+                "fields": {
+                    "response": {
+                        "value": {
+                            "pages": [
+                                {
+                                    "html": 'Some content ajax-link="/tooltip/1" more content ajax-link="/tooltip/2" end'
+                                }
+                            ]
+                        }
                     }
                 }
             }
-        }]
+        ]
     }
 
 
@@ -73,13 +75,18 @@ class TestArborCalendarGenerator:
     @pytest.mark.asyncio
     async def test_start_and_close_browser(self, generator):
         """Test browser startup and cleanup."""
-        with patch("generate_school_calendar.async_playwright") as mock_async_playwright:
+        with patch(
+            "generate_school_calendar.async_playwright"
+        ) as mock_async_playwright:
             mock_playwright_instance = AsyncMock()
             mock_async_playwright.return_value = mock_playwright_instance
 
             mock_browser = AsyncMock()
             mock_context = AsyncMock()
             mock_page = AsyncMock()
+
+            # Set up is_closed as a regular method, not async
+            mock_page.is_closed = MagicMock(return_value=False)
 
             mock_playwright_instance.start.return_value = mock_playwright_instance
             mock_playwright_instance.chromium.launch.return_value = mock_browser
@@ -93,12 +100,14 @@ class TestArborCalendarGenerator:
             assert generator.page is mock_page
 
             mock_playwright_instance.start.assert_called_once()
-            mock_playwright_instance.chromium.launch.assert_called_once_with(headless=True)
+            mock_playwright_instance.chromium.launch.assert_called_once_with(
+                headless=True, args=[]
+            )
             mock_browser.new_context.assert_called_once_with(
                 ignore_https_errors=True,
                 extra_http_headers={
-                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-                }
+                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                },
             )
             mock_context.new_page.assert_called_once()
 
@@ -115,17 +124,15 @@ class TestArborCalendarGenerator:
     def test_get_calendar_html_no_links(self, generator):
         """Test parsing calendar HTML with no AJAX links."""
         entries = {
-            "items": [{
-                "fields": {
-                    "response": {
-                        "value": {
-                            "pages": [
-                                {"html": "No ajax links here"}
-                            ]
+            "items": [
+                {
+                    "fields": {
+                        "response": {
+                            "value": {"pages": [{"html": "No ajax links here"}]}
                         }
                     }
                 }
-            }]
+            ]
         }
 
         links = generator.get_calendar_html(entries)
@@ -145,7 +152,9 @@ class TestArborCalendarGenerator:
 
         assert details == expected
 
-    def test_extract_lesson_details_no_location(self, generator, sample_html_no_location):
+    def test_extract_lesson_details_no_location(
+        self, generator, sample_html_no_location
+    ):
         """Test extraction when location is not provided."""
         details = generator.extract_lesson_details(sample_html_no_location)
 
@@ -232,7 +241,7 @@ class TestArborCalendarGenerator:
                 "staff": "Ms. Johnson",
                 "from_date": datetime.datetime(2024, 1, 16, 10, 0),
                 "to_date": datetime.datetime(2024, 1, 16, 11, 0),
-            }
+            },
         ]
 
         calendar = generator.create_calendar(lessons)
@@ -262,36 +271,58 @@ class TestArborCalendarGenerator:
         with pytest.raises(RuntimeError, match="Browser not started"):
             await generator.get_calendar_entry("/tooltip/1")
 
-
     @pytest.mark.asyncio
     async def test_get_calendar_entries_with_mock_request(self, generator):
         """Test getting calendar entries with mocked request."""
         mock_page = AsyncMock()
+        mock_context = AsyncMock()
         mock_response = AsyncMock()
         mock_response.ok = True
-        mock_response.json.return_value = {"test": "data"}
+        mock_response.json.return_value = {
+            "items": [{"test": "data"}],
+            "success": True,
+            "total": 1,
+        }
 
-        mock_page.request.post.return_value = mock_response
+        # Set up page methods
+        mock_page.is_closed = MagicMock(return_value=False)
+        mock_page.request.get.return_value = mock_response
+        mock_page.goto = AsyncMock()
+
+        # Set up context
+        mock_context._closed = False
+
         generator.page = mock_page
+        generator.context = mock_context
 
         start_date = datetime.date(2024, 1, 1)
         end_date = datetime.date(2024, 1, 31)
 
         result = await generator.get_calendar_entries(start_date, end_date)
 
-        assert result == {"test": "data"}
-        mock_page.request.post.assert_called_once()
+        assert result == {"items": [{"test": "data"}], "success": True, "total": 1}
+        # Should call goto once for calendar page navigation
+        mock_page.goto.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_get_calendar_entries_request_failure(self, generator):
         """Test handling of failed calendar request."""
         mock_page = AsyncMock()
+        mock_context = AsyncMock()
         mock_response = AsyncMock()
         mock_response.ok = False
         mock_response.status = 500
 
-        mock_page.request.post.return_value = mock_response
+        # Set up page methods
+        mock_page.is_closed = MagicMock(return_value=False)
+        mock_page.request.get.return_value = mock_response
+        mock_page.goto = AsyncMock()
+
+        # Set up context
+        mock_context._closed = False
+
         generator.page = mock_page
+        generator.context = mock_context
 
         start_date = datetime.date(2024, 1, 1)
         end_date = datetime.date(2024, 1, 31)
@@ -314,7 +345,10 @@ class TestArborCalendarGenerator:
 
         assert result == "<html>Test response</html>"
         from config import config
-        mock_page.request.get.assert_called_once_with(f"{config.arbor_base_url}/tooltip/1")
+
+        mock_page.request.get.assert_called_once_with(
+            f"{config.arbor_base_url}/tooltip/1"
+        )
 
     @pytest.mark.asyncio
     async def test_get_calendar_entry_request_failure(self, generator):
@@ -346,7 +380,9 @@ class TestAcademicYearDates:
         with patch("generate_school_calendar.datetime") as mock_datetime:
             # Mock date but preserve datetime functionality for creating dates
             mock_datetime.date.side_effect = lambda *args: datetime.date(*args)
-            mock_datetime.date.today = MagicMock(return_value=datetime.date(2024, 9, 15))
+            mock_datetime.date.today = MagicMock(
+                return_value=datetime.date(2024, 9, 15)
+            )
 
             start_date, end_date = get_academic_year_dates()
 
@@ -358,7 +394,9 @@ class TestAcademicYearDates:
         with patch("generate_school_calendar.datetime") as mock_datetime:
             # Mock date but preserve datetime functionality for creating dates
             mock_datetime.date.side_effect = lambda *args: datetime.date(*args)
-            mock_datetime.date.today = MagicMock(return_value=datetime.date(2025, 1, 15))
+            mock_datetime.date.today = MagicMock(
+                return_value=datetime.date(2025, 1, 15)
+            )
 
             start_date, end_date = get_academic_year_dates()
 
@@ -370,7 +408,9 @@ class TestAcademicYearDates:
         with patch("generate_school_calendar.datetime") as mock_datetime:
             # Mock date but preserve datetime functionality for creating dates
             mock_datetime.date.side_effect = lambda *args: datetime.date(*args)
-            mock_datetime.date.today = MagicMock(return_value=datetime.date(2024, 8, 15))
+            mock_datetime.date.today = MagicMock(
+                return_value=datetime.date(2024, 8, 15)
+            )
 
             start_date, end_date = get_academic_year_dates()
 

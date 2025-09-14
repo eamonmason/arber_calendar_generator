@@ -64,7 +64,9 @@ def validate_credentials_file(credentials_path: Path) -> bool:
         # Check if it's the right format
         if "installed" not in creds_data and "web" not in creds_data:
             print("Error: Invalid credentials file format.")
-            print("Make sure you downloaded the OAuth client ID credentials, not a service account key.")
+            print(
+                "Make sure you downloaded the OAuth client ID credentials, not a service account key."
+            )
             return False
 
         client_data = creds_data.get("installed") or creds_data.get("web")
@@ -116,7 +118,9 @@ def setup_authentication(credentials_path: Path) -> bool:
         print("A browser window will open for you to authenticate with Google.")
         print("Please grant access to your Google Calendar.")
 
-        flow = InstalledAppFlow.from_client_secrets_file(str(config_credentials_path), SCOPES)
+        flow = InstalledAppFlow.from_client_secrets_file(
+            str(config_credentials_path), SCOPES
+        )
         creds = flow.run_local_server(port=0)
 
         # Save the token
@@ -147,7 +151,7 @@ def setup_authentication(credentials_path: Path) -> bool:
                 cal_id = calendar["id"]
                 cal_name = calendar.get("summary", "No name")
                 primary = " (PRIMARY)" if calendar.get("primary") else ""
-                print(f"  {i+1}. {cal_name}{primary}")
+                print(f"  {i + 1}. {cal_name}{primary}")
                 if i == 0:  # Show ID for primary calendar
                     print(f"     Calendar ID: {cal_id}")
 

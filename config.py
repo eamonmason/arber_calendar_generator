@@ -11,7 +11,9 @@ from dotenv import load_dotenv
 class Config:
     """Configuration manager for Arbor Calendar Sync."""
 
-    def __init__(self, config_file: str | Path | None = None, env_file: str | Path | None = None) -> None:
+    def __init__(
+        self, config_file: str | Path | None = None, env_file: str | Path | None = None
+    ) -> None:
         """
         Initialize configuration.
 
@@ -24,7 +26,7 @@ class Config:
 
         if config_file is None:
             # Use /tmp in Lambda environment, ~/.config locally
-            if os.environ.get('AWS_LAMBDA_FUNCTION_NAME'):
+            if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
                 config_dir = Path("/tmp") / "arbor-calendar-sync"
             else:
                 config_dir = Path.home() / ".config" / "arbor-calendar-sync"
@@ -55,31 +57,50 @@ class Config:
                 "calendar_id": os.getenv("GOOGLE_CALENDAR_ID", "primary"),
                 "credentials_path": os.getenv(
                     "GOOGLE_CREDENTIALS_PATH",
-                    str(Path.home() / ".config" / "arbor-calendar-sync" / "credentials.json")
+                    str(
+                        Path.home()
+                        / ".config"
+                        / "arbor-calendar-sync"
+                        / "credentials.json"
+                    ),
                 ),
                 "token_path": os.getenv(
                     "GOOGLE_TOKEN_PATH",
-                    str(Path.home() / ".config" / "arbor-calendar-sync" / "token.json")
+                    str(Path.home() / ".config" / "arbor-calendar-sync" / "token.json"),
                 ),
             },
             "sync": {
-                "delete_orphaned_events": os.getenv("SYNC_DELETE_ORPHANED_EVENTS", "true").lower() == "true",
-                "update_existing_events": os.getenv("SYNC_UPDATE_EXISTING_EVENTS", "true").lower() == "true",
+                "delete_orphaned_events": os.getenv(
+                    "SYNC_DELETE_ORPHANED_EVENTS", "true"
+                ).lower()
+                == "true",
+                "update_existing_events": os.getenv(
+                    "SYNC_UPDATE_EXISTING_EVENTS", "true"
+                ).lower()
+                == "true",
                 "batch_size": int(os.getenv("SYNC_BATCH_SIZE", "100")),
                 "dry_run": os.getenv("SYNC_DRY_RUN", "false").lower() == "true",
             },
             "arbor": {
                 "timezone": os.getenv("ARBOR_TIMEZONE", "Europe/London"),
-                "calendar_base_url": os.getenv("ARBOR_BASE_URL", "https://tiffin-school.uk.arbor.sc"),
-                "login_url": os.getenv("ARBOR_LOGIN_URL"),  # Will be constructed from base_url if not provided
-                "calendar_url": os.getenv("ARBOR_CALENDAR_URL"),  # Will be constructed from base_url if not provided
+                "calendar_base_url": os.getenv(
+                    "ARBOR_BASE_URL", "https://tiffin-school.uk.arbor.sc"
+                ),
+                "login_url": os.getenv(
+                    "ARBOR_LOGIN_URL"
+                ),  # Will be constructed from base_url if not provided
+                "calendar_url": os.getenv(
+                    "ARBOR_CALENDAR_URL"
+                ),  # Will be constructed from base_url if not provided
                 "username": os.getenv("ARBOR_USERNAME"),
                 "password": os.getenv("ARBOR_PASSWORD"),
             },
             "academic_year": {
-                "start_month": int(os.getenv("ACADEMIC_YEAR_START_MONTH", "9")),  # September
+                "start_month": int(
+                    os.getenv("ACADEMIC_YEAR_START_MONTH", "9")
+                ),  # September
                 "start_day": int(os.getenv("ACADEMIC_YEAR_START_DAY", "1")),
-                "end_month": int(os.getenv("ACADEMIC_YEAR_END_MONTH", "7")),    # July
+                "end_month": int(os.getenv("ACADEMIC_YEAR_END_MONTH", "7")),  # July
                 "end_day": int(os.getenv("ACADEMIC_YEAR_END_DAY", "31")),
             },
         }
@@ -141,15 +162,17 @@ class Config:
     @property
     def google_calendar_id(self) -> str:
         """Get Google Calendar ID, with environment variable override."""
-        return os.getenv("GOOGLE_CALENDAR_ID") or self.get("google_calendar.calendar_id", "primary")
+        return os.getenv("GOOGLE_CALENDAR_ID") or self.get(
+            "google_calendar.calendar_id", "primary"
+        )
 
     @property
     def credentials_path(self) -> Path:
         """Get path to Google credentials file, with environment variable override."""
         path = (
-            os.getenv("GOOGLE_CREDENTIALS_PATH") or
-            self.get("google_calendar.credentials_path") or
-            str(Path.home() / ".config" / "arbor-calendar-sync" / "credentials.json")
+            os.getenv("GOOGLE_CREDENTIALS_PATH")
+            or self.get("google_calendar.credentials_path")
+            or str(Path.home() / ".config" / "arbor-calendar-sync" / "credentials.json")
         )
         return Path(path)
 
@@ -157,9 +180,9 @@ class Config:
     def token_path(self) -> Path:
         """Get path to Google token file, with environment variable override."""
         path = (
-            os.getenv("GOOGLE_TOKEN_PATH") or
-            self.get("google_calendar.token_path") or
-            str(Path.home() / ".config" / "arbor-calendar-sync" / "token.json")
+            os.getenv("GOOGLE_TOKEN_PATH")
+            or self.get("google_calendar.token_path")
+            or str(Path.home() / ".config" / "arbor-calendar-sync" / "token.json")
         )
         return Path(path)
 
@@ -169,7 +192,8 @@ class Config:
         env_val = os.getenv("SYNC_DELETE_ORPHANED_EVENTS")
         if env_val is not None:
             return env_val.lower() == "true"
-        return self.get("sync.delete_orphaned_events", True)
+        result = self.get("sync.delete_orphaned_events", True)
+        return bool(result)
 
     @property
     def update_existing_events(self) -> bool:
@@ -177,7 +201,8 @@ class Config:
         env_val = os.getenv("SYNC_UPDATE_EXISTING_EVENTS")
         if env_val is not None:
             return env_val.lower() == "true"
-        return self.get("sync.update_existing_events", True)
+        result = self.get("sync.update_existing_events", True)
+        return bool(result)
 
     @property
     def batch_size(self) -> int:
@@ -185,17 +210,22 @@ class Config:
         env_val = os.getenv("SYNC_BATCH_SIZE")
         if env_val is not None:
             return int(env_val)
-        return self.get("sync.batch_size", 100)
+        result = self.get("sync.batch_size", 100)
+        return int(result)
 
     @property
     def arbor_timezone(self) -> str:
         """Timezone for Arbor events, with environment variable override."""
-        return os.getenv("ARBOR_TIMEZONE") or self.get("arbor.timezone", "Europe/London")
+        return os.getenv("ARBOR_TIMEZONE") or self.get(
+            "arbor.timezone", "Europe/London"
+        )
 
     @property
     def arbor_base_url(self) -> str:
         """Base URL for Arbor API, with environment variable override."""
-        return os.getenv("ARBOR_BASE_URL") or self.get("arbor.calendar_base_url", "https://tiffin-school.uk.arbor.sc")
+        return os.getenv("ARBOR_BASE_URL") or self.get(
+            "arbor.calendar_base_url", "https://tiffin-school.uk.arbor.sc"
+        )
 
     @property
     def arbor_login_url(self) -> str:
@@ -205,7 +235,7 @@ class Config:
             return env_url
         config_url = self.get("arbor.login_url")
         if config_url:
-            return config_url
+            return str(config_url)
         return f"{self.arbor_base_url}/auth/login"
 
     @property
@@ -216,7 +246,7 @@ class Config:
             return env_url
         config_url = self.get("arbor.calendar_url")
         if config_url:
-            return config_url
+            return str(config_url)
         return f"{self.arbor_base_url}/calendar-entry/list-static/format/json/"
 
     @property
@@ -232,8 +262,8 @@ class Config:
     def is_configured(self) -> bool:
         """Check if basic configuration is complete."""
         return (
-            self.credentials_path.exists() or
-            os.getenv("GOOGLE_APPLICATION_CREDENTIALS") is not None
+            self.credentials_path.exists()
+            or os.getenv("GOOGLE_APPLICATION_CREDENTIALS") is not None
         )
 
 

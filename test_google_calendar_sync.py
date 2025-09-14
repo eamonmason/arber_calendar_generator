@@ -1,6 +1,7 @@
 """Unit tests for Google Calendar sync functionality."""
 
 import datetime
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -110,7 +111,9 @@ class TestGoogleCalendarSync:
 
         assert event["id"].startswith("arbor_")
         assert event["summary"] == "Mathematics"
-        assert event["description"] == "Staff: Mr. Smith"
+        assert "Staff: Mr. Smith" in event["description"]
+        assert "Source: Arbor Calendar Sync" in event["description"]
+        assert "ID: arbor_" in event["description"]
         assert event["location"] == "Room 101"
         assert event["start"]["dateTime"] == "2024-01-15T09:00:00"
         assert event["end"]["dateTime"] == "2024-01-15T10:00:00"
@@ -131,7 +134,9 @@ class TestGoogleCalendarSync:
 
         assert "location" not in event
         assert event["summary"] == "English"
-        assert event["description"] == "Staff: Ms. Johnson"
+        assert "Staff: Ms. Johnson" in event["description"]
+        assert "Source: Arbor Calendar Sync" in event["description"]
+        assert "ID: arbor_" in event["description"]
 
     @patch("google_calendar_sync.build")
     @patch("google_calendar_sync.Credentials")
@@ -161,10 +166,10 @@ class TestGoogleCalendarSync:
 
     def test_reconcile_events_create_only(self, calendar_sync, sample_lessons):
         """Test reconciling events when all need to be created."""
-        existing_events = []
+        existing_events: list[dict[str, Any]] = []
 
-        events_to_create, events_to_update, event_ids_to_delete = calendar_sync.reconcile_events(
-            sample_lessons, existing_events
+        events_to_create, events_to_update, event_ids_to_delete = (
+            calendar_sync.reconcile_events(sample_lessons, existing_events)
         )
 
         assert len(events_to_create) == 2
@@ -178,20 +183,23 @@ class TestGoogleCalendarSync:
     def test_reconcile_events_mixed_operations(self, calendar_sync, sample_lessons):
         """Test reconciling events with mixed create/update/delete operations."""
         # Create existing event that matches first lesson exactly
-        math_event_id = calendar_sync.generate_event_id(sample_lessons[0])
+        math_arbor_id = calendar_sync.generate_event_id(sample_lessons[0])
         existing_events = [
             {
-                "id": math_event_id,
+                "id": "google_math_event",
                 "summary": "Mathematics",
-                "description": "Staff: Mr. Smith",
+                "description": f"Staff: Mr. Smith\nSource: Arbor Calendar Sync\nID: {math_arbor_id}",
                 "location": "Room 101",
-                "start": {"dateTime": "2024-01-15T09:00:00", "timeZone": "Europe/London"},
+                "start": {
+                    "dateTime": "2024-01-15T09:00:00",
+                    "timeZone": "Europe/London",
+                },
                 "end": {"dateTime": "2024-01-15T10:00:00", "timeZone": "Europe/London"},
             },
             {
                 "id": "arbor_orphaned_event",
                 "summary": "Deleted Subject",
-                "description": "Staff: Old Teacher",
+                "description": "Staff: Old Teacher\nSource: Arbor Calendar Sync\nID: arbor_orphaned123",
             },
         ]
 
@@ -200,8 +208,8 @@ class TestGoogleCalendarSync:
             mock_config.delete_orphaned_events = True
             mock_config.arbor_timezone = "Europe/London"
 
-            events_to_create, events_to_update, event_ids_to_delete = calendar_sync.reconcile_events(
-                sample_lessons, existing_events
+            events_to_create, events_to_update, event_ids_to_delete = (
+                calendar_sync.reconcile_events(sample_lessons, existing_events)
             )
 
         # Should create English lesson (new)
@@ -217,15 +225,18 @@ class TestGoogleCalendarSync:
 
     def test_reconcile_events_update_needed(self, calendar_sync, sample_lessons):
         """Test reconciling when an event needs updating."""
-        # Create existing event with different summary
-        math_event_id = calendar_sync.generate_event_id(sample_lessons[0])
+        # Create existing event with different summary but proper Arbor ID in description
+        math_arbor_id = calendar_sync.generate_event_id(sample_lessons[0])
         existing_events = [
             {
-                "id": math_event_id,
+                "id": "google_event_id_123",  # Different from Arbor ID
                 "summary": "Old Mathematics",  # Different summary
-                "description": "Staff: Mr. Smith",
+                "description": f"Staff: Mr. Smith\nSource: Arbor Calendar Sync\nID: {math_arbor_id}",
                 "location": "Room 101",
-                "start": {"dateTime": "2024-01-15T09:00:00", "timeZone": "Europe/London"},
+                "start": {
+                    "dateTime": "2024-01-15T09:00:00",
+                    "timeZone": "Europe/London",
+                },
                 "end": {"dateTime": "2024-01-15T10:00:00", "timeZone": "Europe/London"},
             }
         ]
@@ -235,8 +246,8 @@ class TestGoogleCalendarSync:
             mock_config.delete_orphaned_events = True
             mock_config.arbor_timezone = "Europe/London"
 
-            events_to_create, events_to_update, event_ids_to_delete = calendar_sync.reconcile_events(
-                sample_lessons[:1], existing_events
+            events_to_create, events_to_update, event_ids_to_delete = (
+                calendar_sync.reconcile_events(sample_lessons[:1], existing_events)
             )
 
         # Should create nothing, update math, delete nothing
@@ -246,7 +257,7 @@ class TestGoogleCalendarSync:
 
         # Check updated event
         assert events_to_update[0]["summary"] == "Mathematics"
-        assert events_to_update[0]["id"] == math_event_id
+        assert events_to_update[0]["id"] == "google_event_id_123"
 
     def test_event_needs_update(self, calendar_sync):
         """Test _event_needs_update method."""
@@ -282,13 +293,19 @@ class TestGoogleCalendarSync:
         mock_build.return_value = mock_service
         calendar_sync.service = mock_service
 
-        # Mock API response
+        # Mock API response - include both Arbor and non-Arbor events
         mock_service.events().list().execute.return_value = {
             "items": [
                 {
                     "id": "arbor_test123",
                     "summary": "Test Event",
-                }
+                    "description": "Source: Arbor Calendar Sync\nID: arbor_test123",
+                },
+                {
+                    "id": "other_event",
+                    "summary": "Other Event",
+                    "description": "Not from Arbor",
+                },
             ]
         }
 
@@ -297,15 +314,20 @@ class TestGoogleCalendarSync:
 
         events = calendar_sync.fetch_existing_events(start_date, end_date)
 
+        # Should only return the Arbor event, filtering out the other event
         assert len(events) == 1
         assert events[0]["id"] == "arbor_test123"
 
-        # Verify API call parameters - should be called twice (once with no args, once with parameters)
-        assert mock_service.events().list.call_count == 2
-        # Get the call with parameters (second call)
-        call_args = mock_service.events().list.call_args_list[1][1]
+        # Verify API call parameters - the chain events().list() gets called
+        mock_service.events().list.assert_called_once()
+        # Get the call arguments from the mock
+        call_args = mock_service.events().list.call_args[1]
         assert call_args["calendarId"] == "test_calendar_id"
-        assert call_args["q"] == "arbor_"
+        assert "timeMin" in call_args
+        assert "timeMax" in call_args
+        assert call_args["maxResults"] == 2500
+        assert call_args["singleEvents"] is True
+        assert call_args["orderBy"] == "startTime"
 
     def test_fetch_existing_events_not_authenticated(self, calendar_sync):
         """Test fetching events without authentication."""

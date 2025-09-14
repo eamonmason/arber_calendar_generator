@@ -13,34 +13,34 @@ Usage:
     # See deployment/README.md for instructions
 """
 
+import asyncio
+import datetime
 import json
 import os
 import sys
-import asyncio
-import datetime
-from typing import Any, Dict
-from pathlib import Path
 import tempfile
+from pathlib import Path
+from typing import Any
 
 # Add current directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from generate_school_calendar import ArborCalendarGenerator, get_academic_year_dates
 from config import config
+from generate_school_calendar import ArborCalendarGenerator, get_academic_year_dates
 from google_calendar_sync import GoogleCalendarSync
 
 
-def get_parameter_from_aws(parameter_name: str) -> dict:
+def get_parameter_from_aws(parameter_name: str) -> Any:
     """Retrieve parameter from AWS Systems Manager Parameter Store."""
     try:
         import boto3
         from botocore.exceptions import ClientError
 
-        ssm_client = boto3.client('ssm')
+        ssm_client = boto3.client("ssm")
         response = ssm_client.get_parameter(Name=parameter_name, WithDecryption=True)
 
         # For JSON parameters, parse the value
-        parameter_value = response['Parameter']['Value']
+        parameter_value = response["Parameter"]["Value"]
         try:
             return json.loads(parameter_value)
         except json.JSONDecodeError:
@@ -54,10 +54,10 @@ def get_parameter_from_aws(parameter_name: str) -> dict:
         return None
 
 
-def setup_aws_credentials():
+def setup_aws_credentials() -> None:
     """Set up credentials from AWS Parameter Store if running in Lambda."""
     # Check if we're running in AWS Lambda
-    if not os.environ.get('AWS_LAMBDA_FUNCTION_NAME'):
+    if not os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
         return  # Not in Lambda, use local credentials
 
     print("Running in AWS Lambda, retrieving credentials from Parameter Store...")
@@ -66,45 +66,45 @@ def setup_aws_credentials():
     temp_dir = Path(tempfile.mkdtemp())
 
     # Get Google credentials
-    google_creds_param = os.environ.get('GOOGLE_CREDENTIALS_PARAMETER')
+    google_creds_param = os.environ.get("GOOGLE_CREDENTIALS_PARAMETER")
     if google_creds_param:
         google_creds = get_parameter_from_aws(google_creds_param)
         if google_creds:
-            credentials_path = temp_dir / 'credentials.json'
-            with open(credentials_path, 'w') as f:
+            credentials_path = temp_dir / "credentials.json"
+            with open(credentials_path, "w") as f:
                 json.dump(google_creds, f)
-            os.environ['GOOGLE_CREDENTIALS_PATH'] = str(credentials_path)
-            print(f"✓ Google credentials loaded from Parameter Store")
+            os.environ["GOOGLE_CREDENTIALS_PATH"] = str(credentials_path)
+            print("✓ Google credentials loaded from Parameter Store")
 
     # Get Google token
-    google_token_param = os.environ.get('GOOGLE_TOKEN_PARAMETER')
+    google_token_param = os.environ.get("GOOGLE_TOKEN_PARAMETER")
     if google_token_param:
         google_token = get_parameter_from_aws(google_token_param)
         if google_token:
-            token_path = temp_dir / 'token.json'
-            with open(token_path, 'w') as f:
+            token_path = temp_dir / "token.json"
+            with open(token_path, "w") as f:
                 json.dump(google_token, f)
-            os.environ['GOOGLE_TOKEN_PATH'] = str(token_path)
-            print(f"✓ Google token loaded from Parameter Store")
+            os.environ["GOOGLE_TOKEN_PATH"] = str(token_path)
+            print("✓ Google token loaded from Parameter Store")
 
     # Get Arbor username
-    arbor_username_param = os.environ.get('ARBOR_USERNAME_PARAMETER')
+    arbor_username_param = os.environ.get("ARBOR_USERNAME_PARAMETER")
     if arbor_username_param:
         arbor_username = get_parameter_from_aws(arbor_username_param)
         if arbor_username:
-            os.environ['ARBOR_USERNAME'] = arbor_username
-            print(f"✓ Arbor username loaded from Parameter Store")
+            os.environ["ARBOR_USERNAME"] = arbor_username
+            print("✓ Arbor username loaded from Parameter Store")
 
     # Get Arbor password
-    arbor_password_param = os.environ.get('ARBOR_PASSWORD_PARAMETER')
+    arbor_password_param = os.environ.get("ARBOR_PASSWORD_PARAMETER")
     if arbor_password_param:
         arbor_password = get_parameter_from_aws(arbor_password_param)
         if arbor_password:
-            os.environ['ARBOR_PASSWORD'] = arbor_password
-            print(f"✓ Arbor password loaded from Parameter Store")
+            os.environ["ARBOR_PASSWORD"] = arbor_password
+            print("✓ Arbor password loaded from Parameter Store")
 
 
-def lambda_handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]:
+def lambda_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
     """
     AWS Lambda entry point for scheduled calendar sync.
 
@@ -123,53 +123,65 @@ def lambda_handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]
         setup_aws_credentials()
 
         # Extract parameters from event (EventBridge can pass custom data)
-        dry_run = event.get('dry_run', False)
-        headless = event.get('headless', True)  # Always headless in Lambda
-        academic_year = event.get('academic_year', None)
-        start_date = event.get('start_date', None)
-        end_date = event.get('end_date', None)
+        dry_run = bool(event.get("dry_run", False))
+        headless = bool(event.get("headless", True))  # Always headless in Lambda
+        academic_year_val = event.get("academic_year")
+        academic_year = (
+            int(academic_year_val) if academic_year_val is not None else None
+        )
+        start_date_val = event.get("start_date")
+        start_date = str(start_date_val) if start_date_val is not None else None
+        end_date_val = event.get("end_date")
+        end_date = str(end_date_val) if end_date_val is not None else None
 
         # Run the sync
-        result = asyncio.run(run_calendar_sync(
-            dry_run=dry_run,
-            headless=headless,
-            academic_year=academic_year,
-            start_date=start_date,
-            end_date=end_date
-        ))
+        result = asyncio.run(
+            run_calendar_sync(
+                dry_run=dry_run,
+                headless=headless,
+                academic_year=academic_year,
+                start_date=start_date,
+                end_date=end_date,
+            )
+        )
 
         print("Lambda execution completed successfully")
         return {
-            'statusCode': 200,
-            'body': json.dumps({
-                'message': 'Calendar sync completed successfully',
-                'result': result,
-                'timestamp': datetime.datetime.now().isoformat()
-            })
+            "statusCode": 200,
+            "body": json.dumps(
+                {
+                    "message": "Calendar sync completed successfully",
+                    "result": result,
+                    "timestamp": datetime.datetime.now().isoformat(),
+                }
+            ),
         }
 
     except Exception as e:
         print(f"Lambda execution failed: {e}")
         import traceback
+
         traceback.print_exc()
 
         return {
-            'statusCode': 500,
-            'body': json.dumps({
-                'error': str(e),
-                'message': 'Calendar sync failed',
-                'timestamp': datetime.datetime.now().isoformat()
-            })
+            "statusCode": 500,
+            "body": json.dumps(
+                {
+                    "error": str(e),
+                    "message": "Calendar sync failed",
+                    "timestamp": datetime.datetime.now().isoformat(),
+                }
+            ),
         }
 
 
 async def run_calendar_sync(
     dry_run: bool = False,
     headless: bool = True,
-    academic_year: int = None,
-    start_date: str = None,
-    end_date: str = None
-) -> Dict[str, Any]:
+    academic_year: int | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict[str, Any]:
     """
     Run the calendar sync operation.
 
@@ -191,13 +203,13 @@ async def run_calendar_sync(
             sync_start_date = datetime.datetime.strptime(start_date, "%Y-%m-%d").date()
             sync_end_date = datetime.datetime.strptime(end_date, "%Y-%m-%d").date()
         except ValueError as e:
-            raise ValueError(f"Error parsing dates: {e}")
+            raise ValueError(f"Error parsing dates: {e}") from e
 
         if sync_start_date > sync_end_date:
             raise ValueError("Start date must be before or equal to end date")
     else:
         # Use current date to end of academic year for Lambda efficiency
-        if os.environ.get('AWS_LAMBDA_FUNCTION_NAME'):
+        if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
             # In Lambda: sync from today to end of current academic year
             today = datetime.date.today()
             _, academic_year_end = get_academic_year_dates(academic_year)
@@ -206,42 +218,50 @@ async def run_calendar_sync(
 
             # Handle case where we're past the academic year end
             if sync_start_date > sync_end_date:
-                print(f"Current date ({today}) is past academic year end ({academic_year_end})")
+                print(
+                    f"Current date ({today}) is past academic year end ({academic_year_end})"
+                )
                 print("No future events to sync. Exiting.")
                 return {
-                    'lessons_found': 0,
-                    'events_created': 0,
-                    'events_updated': 0,
-                    'events_deleted': 0,
-                    'message': 'Current date is past academic year end - no future events to sync'
+                    "lessons_found": 0,
+                    "events_created": 0,
+                    "events_updated": 0,
+                    "events_deleted": 0,
+                    "message": "Current date is past academic year end - no future events to sync",
                 }
 
-            print(f"Lambda mode: Syncing from today ({sync_start_date}) to end of academic year ({sync_end_date})")
+            print(
+                f"Lambda mode: Syncing from today ({sync_start_date}) to end of academic year ({sync_end_date})"
+            )
         else:
             # Local execution: use full academic year dates
             sync_start_date, sync_end_date = get_academic_year_dates(academic_year)
-            print(f"Local mode: Using full academic year dates: {sync_start_date} to {sync_end_date}")
+            print(
+                f"Local mode: Using full academic year dates: {sync_start_date} to {sync_end_date}"
+            )
 
     # Fetch lessons from Arbor
     print("Initializing Arbor calendar generator...")
     generator = ArborCalendarGenerator()
-    lessons = await generator.fetch_lessons(sync_start_date, sync_end_date, headless=headless)
+    lessons = await generator.fetch_lessons(
+        sync_start_date, sync_end_date, headless=headless
+    )
 
     if not lessons:
         print("No lessons found. Exiting.")
         return {
-            'lessons_found': 0,
-            'events_created': 0,
-            'events_updated': 0,
-            'events_deleted': 0,
-            'message': 'No lessons found'
+            "lessons_found": 0,
+            "events_created": 0,
+            "events_updated": 0,
+            "events_deleted": 0,
+            "message": "No lessons found",
         }
 
     print(f"Fetched {len(lessons)} lessons from Arbor")
 
     # Print lesson summary
     print("Lesson summary:")
-    subjects = {}
+    subjects: dict[str, int] = {}
     for lesson in lessons:
         subject = lesson["subject"]
         subjects[subject] = subjects.get(subject, 0) + 1
@@ -258,7 +278,9 @@ async def run_calendar_sync(
 
     # Authenticate with Google
     if not calendar_sync.authenticate():
-        raise RuntimeError("Failed to authenticate with Google Calendar. Please check credentials.")
+        raise RuntimeError(
+            "Failed to authenticate with Google Calendar. Please check credentials."
+        )
 
     # Perform the sync
     stats = calendar_sync.sync_events(lessons, dry_run=dry_run)
@@ -269,13 +291,13 @@ async def run_calendar_sync(
         print("Sync completed successfully!")
 
     result = {
-        'lessons_found': len(lessons),
-        'events_created': stats['created'],
-        'events_updated': stats['updated'],
-        'events_deleted': stats['deleted'],
-        'dry_run': dry_run,
-        'date_range': f"{sync_start_date} to {sync_end_date}",
-        'subjects': subjects
+        "lessons_found": len(lessons),
+        "events_created": stats["created"],
+        "events_updated": stats["updated"],
+        "events_deleted": stats["deleted"],
+        "dry_run": dry_run,
+        "date_range": f"{sync_start_date} to {sync_end_date}",
+        "subjects": subjects,
     }
 
     print(f"Events created: {stats['created']}")
@@ -285,7 +307,7 @@ async def run_calendar_sync(
     return result
 
 
-def main():
+def main() -> None:
     """
     Main entry point for local script execution.
     """
@@ -324,29 +346,32 @@ def main():
     print("Running Arbor Calendar Sync locally...")
 
     try:
-        result = asyncio.run(run_calendar_sync(
-            dry_run=args.dry_run,
-            headless=args.headless,
-            academic_year=args.academic_year,
-            start_date=args.start_date,
-            end_date=args.end_date
-        ))
+        result = asyncio.run(
+            run_calendar_sync(
+                dry_run=args.dry_run,
+                headless=args.headless,
+                academic_year=args.academic_year,
+                start_date=args.start_date,
+                end_date=args.end_date,
+            )
+        )
 
-        print("\n" + "="*50)
+        print("\n" + "=" * 50)
         print("SYNC SUMMARY")
-        print("="*50)
+        print("=" * 50)
         print(f"Lessons found: {result['lessons_found']}")
         print(f"Events created: {result['events_created']}")
         print(f"Events updated: {result['events_updated']}")
         print(f"Events deleted: {result['events_deleted']}")
         print(f"Date range: {result['date_range']}")
-        if result['dry_run']:
+        if result["dry_run"]:
             print("Mode: DRY RUN (no changes made)")
-        print("="*50)
+        print("=" * 50)
 
     except Exception as e:
         print(f"Error: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 

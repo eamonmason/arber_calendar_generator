@@ -61,11 +61,15 @@ class GoogleCalendarSync:
             if not creds:
                 if not credentials_path.exists():
                     print(f"Credentials file not found at {credentials_path}")
-                    print("Please run the setup script first or set up OAuth2 credentials manually.")
+                    print(
+                        "Please run the setup script first or set up OAuth2 credentials manually."
+                    )
                     return False
 
                 try:
-                    flow = InstalledAppFlow.from_client_secrets_file(str(credentials_path), SCOPES)
+                    flow = InstalledAppFlow.from_client_secrets_file(
+                        str(credentials_path), SCOPES
+                    )
                     creds = flow.run_local_server(port=0)
                 except Exception as e:
                     print(f"Failed to authenticate: {e}")
@@ -84,7 +88,8 @@ class GoogleCalendarSync:
         try:
             self.service = build("calendar", "v3", credentials=creds)
             # Test the connection
-            self.service.calendars().get(calendarId=self.calendar_id).execute()
+            if self.service:
+                self.service.calendars().get(calendarId=self.calendar_id).execute()
             print("Successfully authenticated with Google Calendar")
             return True
         except HttpError as e:
@@ -106,16 +111,18 @@ class GoogleCalendarSync:
         """
         # Create a hash from lesson details that won't change
         hash_input = f"{lesson['subject']}|{lesson['from_date']}|{lesson['staff']}"
-        if lesson.get('class_location'):
+        if lesson.get("class_location"):
             hash_input += f"|{lesson['class_location']}"
 
         # Create hash and encode for Google Calendar ID requirements
-        hash_obj = hashlib.sha256(hash_input.encode('utf-8'))
+        hash_obj = hashlib.sha256(hash_input.encode("utf-8"))
         hash_hex = hash_obj.hexdigest()[:20]  # Limit length
 
         return f"{ARBOR_EVENT_PREFIX}{hash_hex}"
 
-    def lesson_to_event(self, lesson: dict[str, Any], include_id: bool = True) -> dict[str, Any]:
+    def lesson_to_event(
+        self, lesson: dict[str, Any], include_id: bool = True
+    ) -> dict[str, Any]:
         """
         Convert an Arbor lesson to Google Calendar event format.
 
@@ -131,11 +138,13 @@ class GoogleCalendarSync:
         end_time = lesson["to_date"].isoformat()
 
         # Create description, only include staff if it's actually available (not a placeholder)
-        staff = lesson.get('staff', '')
+        staff = lesson.get("staff", "")
         if staff and staff != "Teacher TBD" and not staff.startswith("Teacher ("):
             description = f"Staff: {staff}\nSource: Arbor Calendar Sync\nID: {self.generate_event_id(lesson)}"
         else:
-            description = f"Source: Arbor Calendar Sync\nID: {self.generate_event_id(lesson)}"
+            description = (
+                f"Source: Arbor Calendar Sync\nID: {self.generate_event_id(lesson)}"
+            )
 
         event = {
             "summary": lesson["subject"],
@@ -162,7 +171,9 @@ class GoogleCalendarSync:
 
         return event
 
-    def fetch_existing_events(self, start_date: datetime, end_date: datetime) -> list[dict[str, Any]]:
+    def fetch_existing_events(
+        self, start_date: datetime, end_date: datetime
+    ) -> list[dict[str, Any]]:
         """
         Fetch existing Arbor events from Google Calendar.
 
@@ -199,7 +210,10 @@ class GoogleCalendarSync:
             events = []
             for event in all_events:
                 description = event.get("description", "")
-                if "Source: Arbor Calendar Sync" in description and "ID: arbor_" in description:
+                if (
+                    "Source: Arbor Calendar Sync" in description
+                    and "ID: arbor_" in description
+                ):
                     events.append(event)
 
             print(f"Found {len(events)} existing Arbor events in Google Calendar")
@@ -222,8 +236,7 @@ class GoogleCalendarSync:
         Returns:
             Tuple of (events_to_create, events_to_update, event_ids_to_delete)
         """
-        # Convert Arbor lessons to events
-        arbor_events = [self.lesson_to_event(lesson) for lesson in arbor_lessons]
+        # Get Arbor event IDs for comparison
         arbor_event_ids = {self.generate_event_id(lesson) for lesson in arbor_lessons}
 
         # Extract Arbor IDs from existing event descriptions and map them
@@ -269,11 +282,15 @@ class GoogleCalendarSync:
         # Find events to delete (only if configured to do so)
         if config.delete_orphaned_events:
             orphaned_arbor_ids = existing_arbor_ids - arbor_event_ids
-            event_ids_to_delete = [existing_event_map[arbor_id]["id"] for arbor_id in orphaned_arbor_ids]
+            event_ids_to_delete = [
+                existing_event_map[arbor_id]["id"] for arbor_id in orphaned_arbor_ids
+            ]
 
         return events_to_create, events_to_update, event_ids_to_delete
 
-    def _event_needs_update(self, arbor_event: dict[str, Any], existing_event: dict[str, Any]) -> bool:
+    def _event_needs_update(
+        self, arbor_event: dict[str, Any], existing_event: dict[str, Any]
+    ) -> bool:
         """
         Check if an existing event needs to be updated.
 
@@ -336,7 +353,9 @@ class GoogleCalendarSync:
             "deleted": len(event_ids_to_delete),
         }
 
-        print(f"Plan: Create {stats['created']}, Update {stats['updated']}, Delete {stats['deleted']} events")
+        print(
+            f"Plan: Create {stats['created']}, Update {stats['updated']}, Delete {stats['deleted']} events"
+        )
 
         if dry_run:
             print("Dry run mode - no changes made")
@@ -351,7 +370,9 @@ class GoogleCalendarSync:
                     time.sleep(1)  # Pause after every 10 events
 
                 # Create event without custom ID (Google will generate one)
-                self.service.events().insert(calendarId=self.calendar_id, body=event).execute()
+                self.service.events().insert(
+                    calendarId=self.calendar_id, body=event
+                ).execute()
                 time.sleep(0.1)  # Small delay between each event
 
             # Update existing events with rate limiting
@@ -368,7 +389,9 @@ class GoogleCalendarSync:
             # Delete orphaned events with rate limiting
             for i, event_id in enumerate(event_ids_to_delete):
                 if i > 0 and i % 10 == 0:
-                    print(f"  Deleted {i}/{len(event_ids_to_delete)} events, pausing...")
+                    print(
+                        f"  Deleted {i}/{len(event_ids_to_delete)} events, pausing..."
+                    )
                     time.sleep(1)
 
                 self.service.events().delete(
@@ -376,7 +399,9 @@ class GoogleCalendarSync:
                 ).execute()
                 time.sleep(0.1)
 
-            print(f"Successfully synced events: Created {stats['created']}, Updated {stats['updated']}, Deleted {stats['deleted']}")
+            print(
+                f"Successfully synced events: Created {stats['created']}, Updated {stats['updated']}, Deleted {stats['deleted']}"
+            )
 
         except HttpError as e:
             print(f"Error during sync: {e}")

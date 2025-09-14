@@ -12,6 +12,7 @@ import argparse
 import asyncio
 import datetime
 import json
+from typing import Any
 
 import bs4 as bs
 import dateutil.tz
@@ -21,7 +22,9 @@ from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 from config import config
 
 
-def get_academic_year_dates(year: int | None = None) -> tuple[datetime.date, datetime.date]:
+def get_academic_year_dates(
+    year: int | None = None,
+) -> tuple[datetime.date, datetime.date]:
     """
     Get the start and end dates for the UK academic year.
 
@@ -59,67 +62,74 @@ class ArborCalendarGenerator:
         import os
 
         # Clean up any existing browser resources first
-        if hasattr(self, 'context') and self.context and not self.context._closed:
+        if (
+            hasattr(self, "context")
+            and self.context
+            and not getattr(self.context, "_closed", False)
+        ):
             try:
                 await self.context.close()
-            except:
+            except Exception:
                 pass
-        if hasattr(self, 'browser') and self.browser:
+        if hasattr(self, "browser") and self.browser:
             try:
                 await self.browser.close()
-            except:
+            except Exception:
                 pass
 
         playwright = await async_playwright().start()
 
         # Add Lambda-specific browser arguments
         launch_args = []
-        if os.environ.get('AWS_LAMBDA_FUNCTION_NAME'):
+        if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
             launch_args = [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-gpu',
-                '--no-zygote',
-                '--single-process',
-                '--disable-background-timer-throttling',
-                '--disable-backgrounding-occluded-windows',
-                '--disable-renderer-backgrounding',
-                '--disable-extensions',
-                '--disable-default-apps',
-                '--disable-background-networking',
-                '--disable-sync'
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--no-zygote",
+                "--single-process",
+                "--disable-background-timer-throttling",
+                "--disable-backgrounding-occluded-windows",
+                "--disable-renderer-backgrounding",
+                "--disable-extensions",
+                "--disable-default-apps",
+                "--disable-background-networking",
+                "--disable-sync",
             ]
 
         self.browser = await playwright.chromium.launch(
-            headless=headless,
-            args=launch_args
+            headless=headless, args=launch_args
         )
 
         self.context = await self.browser.new_context(
             ignore_https_errors=True,  # Ignore SSL certificate errors
             extra_http_headers={
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            }
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            },
         )
         self.page = await self.context.new_page()
 
     async def close_browser(self) -> None:
         """Close the browser and cleanup resources safely."""
         try:
-            if hasattr(self, 'page') and self.page and not self.page.is_closed():
+            if hasattr(self, "page") and self.page and not self.page.is_closed():
                 await self.page.close()
         except Exception as e:
             print(f"Warning: Error closing page: {e}")
 
         try:
-            if hasattr(self, 'context') and self.context and not self.context._closed:
+            if (
+                hasattr(self, "context")
+                and self.context
+                and not getattr(self.context, "_closed", False)
+            ):
                 await self.context.close()
         except Exception as e:
             print(f"Warning: Error closing context: {e}")
 
         try:
-            if hasattr(self, 'browser') and self.browser:
+            if hasattr(self, "browser") and self.browser:
                 await self.browser.close()
         except Exception as e:
             print(f"Warning: Error closing browser: {e}")
@@ -157,7 +167,9 @@ class ArborCalendarGenerator:
 
         # Verify we're logged in by checking for common elements
         try:
-            await self.page.wait_for_selector(".header, .navigation, .main-content", timeout=10000)
+            await self.page.wait_for_selector(
+                ".header, .navigation, .main-content", timeout=10000
+            )
             print("Login successful!")
         except Exception:
             print("Warning: Could not verify login status. Continuing anyway...")
@@ -174,13 +186,13 @@ class ArborCalendarGenerator:
             'input[name="username"]',
             'input[name="user"]',
             'input[id="email"]',
-            'input[id="username"]'
+            'input[id="username"]',
         ]
 
         password_selectors = [
             'input[type="password"]',
             'input[name="password"]',
-            'input[id="password"]'
+            'input[id="password"]',
         ]
 
         submit_selectors = [
@@ -189,18 +201,23 @@ class ArborCalendarGenerator:
             'button:has-text("Log in")',
             'button:has-text("Login")',
             'button:has-text("Sign in")',
-            '.login-button',
-            '.btn-login'
+            ".login-button",
+            ".btn-login",
         ]
 
         # Find and fill username field
+        if not self.page:
+            raise RuntimeError("Page not available")
+
         username_field = None
         for selector in login_selectors:
             try:
-                username_field = await self.page.wait_for_selector(selector, timeout=3000)
+                username_field = await self.page.wait_for_selector(
+                    selector, timeout=3000
+                )
                 if username_field:
                     break
-            except:
+            except Exception:
                 continue
 
         if not username_field:
@@ -210,10 +227,12 @@ class ArborCalendarGenerator:
         password_field = None
         for selector in password_selectors:
             try:
-                password_field = await self.page.wait_for_selector(selector, timeout=1000)
+                password_field = await self.page.wait_for_selector(
+                    selector, timeout=1000
+                )
                 if password_field:
                     break
-            except:
+            except Exception:
                 continue
 
         if not password_field:
@@ -227,10 +246,12 @@ class ArborCalendarGenerator:
         submit_button = None
         for selector in submit_selectors:
             try:
-                submit_button = await self.page.wait_for_selector(selector, timeout=1000)
+                submit_button = await self.page.wait_for_selector(
+                    selector, timeout=1000
+                )
                 if submit_button:
                     break
-            except:
+            except Exception:
                 continue
 
         if not submit_button:
@@ -241,18 +262,22 @@ class ArborCalendarGenerator:
 
         # Wait for navigation after login
         try:
-            await self.page.wait_for_load_state('networkidle', timeout=10000)
-        except:
+            if self.page:
+                await self.page.wait_for_load_state("networkidle", timeout=10000)
+        except Exception:
             # If networkidle fails, wait a bit and continue
             await asyncio.sleep(3)
 
     async def _manual_login(self) -> None:
         """Perform manual login process."""
         print("Please log in to Arbor in the browser window...")
-        print("Press Enter once you have successfully logged in and are on the main page.")
+        print(
+            "Press Enter once you have successfully logged in and are on the main page."
+        )
 
         # Wait for user to complete login
         import sys
+
         if sys.stdin.isatty():
             try:
                 input("Press Enter to continue after logging in...")
@@ -271,7 +296,7 @@ class ArborCalendarGenerator:
         if not self.page or self.page.is_closed():
             raise RuntimeError("Browser page is not available or has been closed.")
 
-        if not self.context or self.context._closed:
+        if not self.context or getattr(self.context, "_closed", True):
             raise RuntimeError("Browser context is not available or has been closed.")
 
         # First navigate to the calendar page to establish session context
@@ -301,11 +326,13 @@ class ArborCalendarGenerator:
             calendar_api_url = f"{config.arbor_base_url}/guardians/widget-data/get-calendar-data/student-id/{student_object_id}/date/{current_date}"
 
             try:
-                response = await self.page.request.get(calendar_api_url, timeout=30000)  # 30 second timeout
+                response = await self.page.request.get(
+                    calendar_api_url, timeout=30000
+                )  # 30 second timeout
 
                 if response.ok:
                     day_data = await response.json()
-                    items = day_data.get('items', [])
+                    items = day_data.get("items", [])
 
                     if items:
                         print(f"  {current_date}: Found {len(items)} entries")
@@ -327,24 +354,22 @@ class ArborCalendarGenerator:
         print(f"Total entries found: {len(all_entries)}")
 
         # Return in the format expected by the rest of the code
-        return {
-            "items": all_entries,
-            "success": True,
-            "total": len(all_entries)
-        }
+        return {"items": all_entries, "success": True, "total": len(all_entries)}
 
     async def parse_calendar_entries_with_details(self, entries: dict) -> list[dict]:
         """
         Parse calendar entries and fetch detailed information including teacher data.
         For performance, we'll fetch detailed info for a sample of lessons first to test.
         """
-        lessons = []
+        lessons: list[dict[str, Any]] = []
 
         if "items" not in entries or not isinstance(entries["items"], list):
             return lessons
 
         total_entries = len(entries["items"])
-        print(f"Fetching detailed information for a sample of {min(50, total_entries)} lessons to test teacher extraction...")
+        print(
+            f"Fetching detailed information for a sample of {min(50, total_entries)} lessons to test teacher extraction..."
+        )
 
         # Process only first 50 lessons as a test
         sample_size = min(50, total_entries)
@@ -382,7 +407,9 @@ class ArborCalendarGenerator:
 
         # For remaining lessons, just use basic extraction without detailed fetching
         if total_entries > sample_size:
-            print(f"Processing remaining {total_entries - sample_size} lessons with basic extraction...")
+            print(
+                f"Processing remaining {total_entries - sample_size} lessons with basic extraction..."
+            )
             for item in entries["items"][sample_size:]:
                 if not isinstance(item, dict) or "fields" not in item:
                     continue
@@ -397,55 +424,60 @@ class ArborCalendarGenerator:
 
         return lessons
 
-    def extract_basic_lesson_from_fields(self, fields: dict) -> dict:
+    def extract_basic_lesson_from_fields(
+        self, fields: dict[str, Any]
+    ) -> dict[str, Any]:
         """Extract basic lesson details from calendar entry fields."""
+
         # Extract the data from fields.{field_name}.value structure
-        def get_field_value(field_name: str, default=None):
+        def get_field_value(field_name: str, default: Any = None) -> Any:
             field_data = fields.get(field_name, {})
-            return field_data.get('value', default)
+            return field_data.get("value", default)
 
         # Debug: Print available fields on first few calls to understand structure
-        if hasattr(self, '_debug_field_count'):
+        if hasattr(self, "_debug_field_count"):
             self._debug_field_count += 1
         else:
-            self._debug_field_count = 1
+            self._debug_field_count: int = 1
 
         if self._debug_field_count <= 3:
             print(f"Debug - Available fields: {list(fields.keys())}")
             for field_name, field_data in fields.items():
-                if isinstance(field_data, dict) and 'value' in field_data:
+                if isinstance(field_data, dict) and "value" in field_data:
                     print(f"  {field_name}: {field_data['value']}")
 
         # Get the lesson title and extract subject
-        title = get_field_value('title', '')
+        title = get_field_value("title", "")
         # Title format is like: "Maths (KStg3): Year 9: 9X/Ma1"
-        if ':' in title:
-            subject = title.split(':')[0].strip()
+        if ":" in title:
+            subject = title.split(":")[0].strip()
             # Remove grade info in parentheses like "(KStg3)"
-            if '(' in subject and ')' in subject:
-                subject = subject.split('(')[0].strip()
+            if "(" in subject and ")" in subject:
+                subject = subject.split("(")[0].strip()
         else:
             subject = title
 
         # Get location
-        location = get_field_value('location')
+        location = get_field_value("location")
 
         # Get date/time information
-        start_datetime_str = get_field_value('start_datetime')
-        end_datetime_str = get_field_value('end_datetime')
+        start_datetime_str = get_field_value("start_datetime")
+        end_datetime_str = get_field_value("end_datetime")
 
         if not start_datetime_str or not end_datetime_str:
             raise ValueError("Missing start or end datetime")
 
         # Parse datetime strings (format: "2025-09-16 08:30:00")
         try:
-            from_date = datetime.datetime.strptime(start_datetime_str, "%Y-%m-%d %H:%M:%S")
+            from_date = datetime.datetime.strptime(
+                start_datetime_str, "%Y-%m-%d %H:%M:%S"
+            )
             to_date = datetime.datetime.strptime(end_datetime_str, "%Y-%m-%d %H:%M:%S")
         except ValueError as e:
-            raise ValueError(f"Could not parse datetime: {e}")
+            raise ValueError(f"Could not parse datetime: {e}") from e
 
         # Get the detail URL for fetching teacher information
-        detail_url = get_field_value('url')
+        detail_url = get_field_value("url")
 
         return {
             "subject": subject,
@@ -453,7 +485,7 @@ class ArborCalendarGenerator:
             "from_date": from_date,
             "to_date": to_date,
             "detail_url": detail_url,
-            "staff": "Teacher TBD"  # Will be overridden by detailed fetch
+            "staff": "Teacher TBD",  # Will be overridden by detailed fetch
         }
 
     async def get_detailed_lesson_info(self, detail_url: str) -> dict:
@@ -462,8 +494,10 @@ class ArborCalendarGenerator:
             print("Warning: Page is closed, cannot fetch detailed lesson info")
             return {"staff": "Teacher TBD"}
 
-        if not self.context or self.context._closed:
-            print("Warning: Browser context is closed, cannot fetch detailed lesson info")
+        if not self.context or getattr(self.context, "_closed", True):
+            print(
+                "Warning: Browser context is closed, cannot fetch detailed lesson info"
+            )
             return {"staff": "Teacher TBD"}
 
         try:
@@ -474,16 +508,18 @@ class ArborCalendarGenerator:
             response = await self.page.request.get(full_url)
 
             if not response.ok:
-                print(f"Warning: Failed to fetch lesson details from {full_url}: {response.status}")
+                print(
+                    f"Warning: Failed to fetch lesson details from {full_url}: {response.status}"
+                )
                 return {"staff": "Teacher TBD"}
 
             html_content = await response.text()
 
             # Debug: Log HTML structure for first few requests to understand the format
-            if hasattr(self, '_debug_html_count'):
+            if hasattr(self, "_debug_html_count"):
                 self._debug_html_count += 1
             else:
-                self._debug_html_count = 1
+                self._debug_html_count: int = 1
 
             if self._debug_html_count <= 2:
                 print(f"Debug HTML structure for URL {detail_url}:")
@@ -493,9 +529,7 @@ class ArborCalendarGenerator:
             # Extract teacher information from HTML
             lesson_details = self.extract_lesson_details_new(html_content)
 
-            return {
-                "staff": lesson_details.get("staff", "Teacher TBD")
-            }
+            return {"staff": lesson_details.get("staff", "Teacher TBD")}
 
         except Exception as e:
             print(f"Warning: Error fetching lesson details from {detail_url}: {e}")
@@ -515,7 +549,6 @@ class ArborCalendarGenerator:
 
     def extract_lesson_details_new(self, content: str) -> dict:
         """Extract lesson details from the JSON response format."""
-        import json
 
         # Initialize result with defaults
         result = {
@@ -523,7 +556,7 @@ class ArborCalendarGenerator:
             "class_location": None,
             "staff": "Teacher TBD",
             "from_date": None,
-            "to_date": None
+            "to_date": None,
         }
 
         try:
@@ -539,43 +572,67 @@ class ArborCalendarGenerator:
                             if isinstance(item, dict) and "content" in item:
                                 # Look through property rows for lesson details
                                 for prop_item in item["content"]:
-                                    if isinstance(prop_item, dict) and "props" in prop_item:
+                                    if (
+                                        isinstance(prop_item, dict)
+                                        and "props" in prop_item
+                                    ):
                                         props = prop_item["props"]
-                                        field_label = props.get("fieldLabel", "").lower()
+                                        field_label = props.get(
+                                            "fieldLabel", ""
+                                        ).lower()
                                         value = props.get("value", "")
 
                                         # Debug: Print found properties
-                                        if hasattr(self, '_debug_json_count'):
+                                        if hasattr(self, "_debug_json_count"):
                                             self._debug_json_count += 1
                                         else:
-                                            self._debug_json_count = 1
+                                            self._debug_json_count: int = 1
 
-                                        if self._debug_json_count <= 10:  # Show more properties to understand structure
-                                            print(f"Found property: '{field_label}' = '{value}'")
+                                        if (
+                                            self._debug_json_count <= 10
+                                        ):  # Show more properties to understand structure
+                                            print(
+                                                f"Found property: '{field_label}' = '{value}'"
+                                            )
 
                                         # Look for staff/teacher information
-                                        if field_label in ['teacher', 'staff', 'tutor', 'instructor', 'taught by']:
+                                        if field_label in [
+                                            "teacher",
+                                            "staff",
+                                            "tutor",
+                                            "instructor",
+                                            "taught by",
+                                        ]:
                                             if value and value.strip():
                                                 result["staff"] = value.strip()
-                                                print(f"Found staff in '{field_label}': {result['staff']}")
+                                                print(
+                                                    f"Found staff in '{field_label}': {result['staff']}"
+                                                )
 
                                         # Look for other common staff field names
-                                        elif 'teacher' in field_label or 'staff' in field_label or 'tutor' in field_label:
+                                        elif (
+                                            "teacher" in field_label
+                                            or "staff" in field_label
+                                            or "tutor" in field_label
+                                        ):
                                             if value and value.strip():
                                                 result["staff"] = value.strip()
-                                                print(f"Found staff in '{field_label}': {result['staff']}")
+                                                print(
+                                                    f"Found staff in '{field_label}': {result['staff']}"
+                                                )
 
             # If still no staff found, try searching the entire JSON content as text
             if result["staff"] == "Teacher TBD":
                 content_text = json.dumps(data).lower()
 
                 # Look for teacher-related keywords in the JSON
-                staff_keywords = ['teacher', 'staff', 'tutor', 'instructor']
+                staff_keywords = ["teacher", "staff", "tutor", "instructor"]
 
                 for keyword in staff_keywords:
                     if keyword in content_text:
                         # Try to find patterns like "teacher":"John Smith" or similar
                         import re
+
                         patterns = [
                             rf'"{keyword}"\s*:\s*"([^"]+)"',
                             rf'"{keyword}"\s*:\s*"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)"',
@@ -588,7 +645,9 @@ class ArborCalendarGenerator:
                                 staff_name = match.group(1).strip()
                                 if len(staff_name) > 2:  # Avoid single letters
                                     result["staff"] = staff_name
-                                    print(f"Found staff via JSON search with '{keyword}': {result['staff']}")
+                                    print(
+                                        f"Found staff via JSON search with '{keyword}': {result['staff']}"
+                                    )
                                     break
 
                         if result["staff"] != "Teacher TBD":
@@ -598,9 +657,9 @@ class ArborCalendarGenerator:
             print(f"Failed to parse lesson detail JSON: {e}")
             # Fallback to treating it as HTML
             try:
-                parser = bs.BeautifulSoup(content, "html.parser")
                 # This shouldn't happen based on what we've seen, but just in case
                 # Could add HTML parsing fallback here if needed
+                bs.BeautifulSoup(content, "html.parser")
             except Exception as fallback_e:
                 print(f"Fallback HTML parsing also failed: {fallback_e}")
 
@@ -650,8 +709,12 @@ class ArborCalendarGenerator:
         try:
             date_str, time_str = parsed_date.split(", ")[1:]
             from_time, to_time = time_str.split(" - ")
-            from_date = datetime.datetime.strptime(f"{date_str} {from_time}", "%d %b %Y %H:%M")
-            to_date = datetime.datetime.strptime(f"{date_str} {to_time}", "%d %b %Y %H:%M")
+            from_date = datetime.datetime.strptime(
+                f"{date_str} {from_time}", "%d %b %Y %H:%M"
+            )
+            to_date = datetime.datetime.strptime(
+                f"{date_str} {to_time}", "%d %b %Y %H:%M"
+            )
         except (ValueError, IndexError) as e:
             raise ValueError(f"Could not parse date/time information: {e}") from e
 
@@ -682,12 +745,16 @@ class ArborCalendarGenerator:
     def create_calendar(self, lesson_list: list[dict]) -> icalendar.Calendar:
         """Create an iCalendar from the list of lessons."""
         cal = icalendar.Calendar()
-        cal.add("prodid", config.get("calendar.prod_id", "-//Tiffin School//Tiffin School Calendar//EN"))
+        cal.add(
+            "prodid",
+            config.get(
+                "calendar.prod_id", "-//Tiffin School//Tiffin School Calendar//EN"
+            ),
+        )
         cal.add("version", "2.0")
         for lesson in lesson_list:
             cal.add_component(self.create_calendar_event(lesson))
         return cal
-
 
     async def fetch_lessons(
         self, start_date: datetime.date, end_date: datetime.date, headless: bool = True
@@ -705,17 +772,23 @@ class ArborCalendarGenerator:
             print("Fetching calendar entries...")
             calendar_entries = await self.get_calendar_entries(start_date, end_date)
 
-            print(f"Found {len(calendar_entries.get('items', []))} calendar entries. Processing...")
+            print(
+                f"Found {len(calendar_entries.get('items', []))} calendar entries. Processing..."
+            )
 
             # Use the new method that fetches detailed lesson information including teachers
-            lesson_list = await self.parse_calendar_entries_with_details(calendar_entries)
+            lesson_list = await self.parse_calendar_entries_with_details(
+                calendar_entries
+            )
 
             if not lesson_list:
                 print("Warning: No lessons were successfully processed")
             else:
                 print("Sample lessons:")
                 for i, lesson in enumerate(lesson_list[:3]):
-                    print(f"  {i+1}. {lesson['subject']} at {lesson['from_date']} in {lesson['class_location']}")
+                    print(
+                        f"  {i + 1}. {lesson['subject']} at {lesson['from_date']} in {lesson['class_location']}"
+                    )
 
             print(f"Successfully fetched {len(lesson_list)} lessons from Arbor")
             return lesson_list
@@ -783,7 +856,9 @@ async def main() -> None:
 
     # Fetch lessons from Arbor
     generator = ArborCalendarGenerator()
-    lessons = await generator.fetch_lessons(start_date, end_date, headless=args.headless)
+    lessons = await generator.fetch_lessons(
+        start_date, end_date, headless=args.headless
+    )
 
     if not lessons:
         print("No lessons found. Exiting.")
@@ -793,7 +868,7 @@ async def main() -> None:
 
     # Print lesson summary
     print("\nLesson summary:")
-    subjects = {}
+    subjects: dict[str, int] = {}
     for lesson in lessons:
         subject = lesson["subject"]
         subjects[subject] = subjects.get(subject, 0) + 1
@@ -807,7 +882,9 @@ async def main() -> None:
         from google_calendar_sync import GoogleCalendarSync
 
         # Determine which calendar ID to use
-        calendar_id = args.calendar_id if args.calendar_id else config.google_calendar_id
+        calendar_id = (
+            args.calendar_id if args.calendar_id else config.google_calendar_id
+        )
 
         # Sync with Google Calendar
         print(f"\nSyncing to Google Calendar '{calendar_id}'...")

@@ -13,9 +13,9 @@ Parameters:
     Description: Base URL for Arbor MIS
     Default: "https://your-school.uk.arbor.sc"
 
-  ArborStudentId:
+  ArborStudentObjectId:
     Type: String
-    Description: Student ID in Arbor system
+    Description: Student object ID in Arbor system
     NoEcho: true
 
   ArborUsername:
@@ -173,7 +173,7 @@ Resources:
           ARBOR_USERNAME_PARAMETER: !Sub '/${AWS::StackName}/arbor/username'
           ARBOR_PASSWORD_PARAMETER: !Sub '/${AWS::StackName}/arbor/password'
           ARBOR_BASE_URL: !Ref ArborBaseUrl
-          ARBOR_STUDENT_ID: !Ref ArborStudentId
+          ARBOR_STUDENT_OBJECT_ID: !Ref ArborStudentObjectId
           UPDATE_EXISTING_EVENTS: !Ref UpdateExistingEvents
           DELETE_ORPHANED_EVENTS: !Ref DeleteOrphanedEvents
           ARBOR_TIMEZONE: "Europe/London"
