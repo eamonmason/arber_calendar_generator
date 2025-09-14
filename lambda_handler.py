@@ -73,6 +73,14 @@ def setup_aws_credentials() -> None:
     # AWS credentials are validated when we actually call GetParameter below
     print("✓ AWS Lambda environment detected, will use Parameter Store")
 
+    # Track what credentials we successfully load
+    credentials_loaded = {
+        "google_credentials": False,
+        "google_token": False,
+        "arbor_username": False,
+        "arbor_password": False,
+    }
+
     # Create temporary directory for credential files
     temp_dir = Path(tempfile.mkdtemp())
 
@@ -86,6 +94,7 @@ def setup_aws_credentials() -> None:
                 json.dump(google_creds, f)
             os.environ["GOOGLE_CREDENTIALS_PATH"] = str(credentials_path)
             print("✓ Google credentials loaded from Parameter Store")
+            credentials_loaded["google_credentials"] = True
 
     # Get Google token
     google_token_param = os.environ.get("GOOGLE_TOKEN_PARAMETER")
@@ -97,6 +106,7 @@ def setup_aws_credentials() -> None:
                 json.dump(google_token, f)
             os.environ["GOOGLE_TOKEN_PATH"] = str(token_path)
             print("✓ Google token loaded from Parameter Store")
+            credentials_loaded["google_token"] = True
 
     # Get Arbor username
     arbor_username_param = os.environ.get("ARBOR_USERNAME_PARAMETER")
@@ -106,6 +116,7 @@ def setup_aws_credentials() -> None:
         if arbor_username:
             os.environ["ARBOR_USERNAME"] = arbor_username
             print("✓ Arbor username loaded from Parameter Store")
+            credentials_loaded["arbor_username"] = True
         else:
             print(f"❌ Failed to load Arbor username from {arbor_username_param}")
     else:
@@ -119,10 +130,24 @@ def setup_aws_credentials() -> None:
         if arbor_password:
             os.environ["ARBOR_PASSWORD"] = arbor_password
             print("✓ Arbor password loaded from Parameter Store")
+            credentials_loaded["arbor_password"] = True
         else:
             print(f"❌ Failed to load Arbor password from {arbor_password_param}")
     else:
         print("❌ ARBOR_PASSWORD_PARAMETER environment variable not set")
+
+    # Summary of credential loading
+    print(f"\n📋 Credential loading summary: {credentials_loaded}")
+
+    # Check if we have the minimum required credentials for operation
+    if (
+        not credentials_loaded["arbor_username"]
+        or not credentials_loaded["arbor_password"]
+    ):
+        missing = [k for k, v in credentials_loaded.items() if not v and "arbor" in k]
+        error_msg = f"Missing required Arbor credentials: {missing}. Cannot proceed with calendar sync."
+        print(f"❌ {error_msg}")
+        raise RuntimeError(error_msg)
 
 
 def lambda_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
