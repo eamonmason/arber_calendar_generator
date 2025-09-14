@@ -37,10 +37,14 @@ def get_parameter_from_aws(parameter_name: str) -> Any:
         from botocore.exceptions import ClientError
 
         ssm_client = boto3.client("ssm")
+        print(f"Attempting to get parameter: {parameter_name}")
         response = ssm_client.get_parameter(Name=parameter_name, WithDecryption=True)
 
         # For JSON parameters, parse the value
         parameter_value = response["Parameter"]["Value"]
+        print(
+            f"Successfully retrieved parameter {parameter_name} (length: {len(parameter_value)})"
+        )
         try:
             return json.loads(parameter_value)
         except json.JSONDecodeError:
@@ -48,9 +52,13 @@ def get_parameter_from_aws(parameter_name: str) -> Any:
             return parameter_value
     except ImportError:
         # boto3 not available (local execution)
+        print(f"boto3 not available for parameter {parameter_name}")
         return None
     except ClientError as e:
-        print(f"Failed to retrieve parameter {parameter_name}: {e}")
+        print(f"ClientError retrieving parameter {parameter_name}: {e}")
+        return None
+    except Exception as e:
+        print(f"Unexpected error retrieving parameter {parameter_name}: {e}")
         return None
 
 
@@ -92,19 +100,29 @@ def setup_aws_credentials() -> None:
 
     # Get Arbor username
     arbor_username_param = os.environ.get("ARBOR_USERNAME_PARAMETER")
+    print(f"Looking for Arbor username parameter: {arbor_username_param}")
     if arbor_username_param:
         arbor_username = get_parameter_from_aws(arbor_username_param)
         if arbor_username:
             os.environ["ARBOR_USERNAME"] = arbor_username
             print("✓ Arbor username loaded from Parameter Store")
+        else:
+            print(f"❌ Failed to load Arbor username from {arbor_username_param}")
+    else:
+        print("❌ ARBOR_USERNAME_PARAMETER environment variable not set")
 
     # Get Arbor password
     arbor_password_param = os.environ.get("ARBOR_PASSWORD_PARAMETER")
+    print(f"Looking for Arbor password parameter: {arbor_password_param}")
     if arbor_password_param:
         arbor_password = get_parameter_from_aws(arbor_password_param)
         if arbor_password:
             os.environ["ARBOR_PASSWORD"] = arbor_password
             print("✓ Arbor password loaded from Parameter Store")
+        else:
+            print(f"❌ Failed to load Arbor password from {arbor_password_param}")
+    else:
+        print("❌ ARBOR_PASSWORD_PARAMETER environment variable not set")
 
 
 def lambda_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
