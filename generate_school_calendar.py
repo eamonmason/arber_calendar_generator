@@ -102,13 +102,21 @@ class ArborCalendarGenerator:
             headless=headless, args=launch_args
         )
 
+        # Set longer timeout for Lambda environment
+        browser_timeout = 60000 if os.environ.get("AWS_LAMBDA_FUNCTION_NAME") else 30000
+
         self.context = await self.browser.new_context(
             ignore_https_errors=True,  # Ignore SSL certificate errors
             extra_http_headers={
                 "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             },
         )
+        self.context.set_default_timeout(browser_timeout)
         self.page = await self.context.new_page()
+        print("Browser started successfully")
+        print(f"Context created: {self.context is not None}")
+        print(f"Context closed status: {getattr(self.context, '_closed', 'unknown')}")
+        print(f"Page created: {self.page is not None}")
 
     async def close_browser(self) -> None:
         """Close the browser and cleanup resources safely."""
@@ -297,6 +305,10 @@ class ArborCalendarGenerator:
             raise RuntimeError("Browser page is not available or has been closed.")
 
         if not self.context or getattr(self.context, "_closed", True):
+            print("Error: Browser context is not available or has been closed.")
+            print(f"Context exists: {self.context is not None}")
+            if self.context:
+                print(f"Context closed: {getattr(self.context, '_closed', 'unknown')}")
             raise RuntimeError("Browser context is not available or has been closed.")
 
         # First navigate to the calendar page to establish session context
