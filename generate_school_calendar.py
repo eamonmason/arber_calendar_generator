@@ -129,7 +129,6 @@ class ArborCalendarGenerator:
                 "--disable-dev-shm-usage",
                 "--disable-gpu",
                 "--no-zygote",
-                "--single-process",
                 "--disable-background-timer-throttling",
                 "--disable-backgrounding-occluded-windows",
                 "--disable-renderer-backgrounding",
@@ -140,7 +139,7 @@ class ArborCalendarGenerator:
                 "--disable-web-security",  # Add for Lambda environment
                 "--disable-features=VizDisplayCompositor",  # Reduce memory usage
                 "--memory-pressure-off",  # Disable memory pressure notifications
-                "--max_old_space_size=1800",  # Limit Node.js memory (Lambda has 2048MB)
+                "--max_old_space_size=2800",  # Limit Node.js memory (Lambda has 3072MB)
                 "--disable-background-mode",
                 "--disable-plugins",
                 "--disable-images",  # Don't load images to save memory

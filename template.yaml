@@ -43,7 +43,7 @@ Parameters:
 Globals:
   Function:
     Timeout: 900  # 15 minutes (maximum allowed for Lambda)
-    MemorySize: 2048  # Further increased for Playwright browser stability
+    MemorySize: 3072  # Further increased for Playwright browser stability
 
 Resources:
   # Parameter Store parameters for configuration
