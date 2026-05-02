@@ -14,7 +14,7 @@ import datetime
 import json
 import logging
 import os
-from typing import Any
+from typing import Any, Literal
 
 import bs4 as bs
 import dateutil.tz
@@ -122,13 +122,20 @@ class ArborCalendarGenerator:
 
         # Add Lambda-specific browser arguments with more aggressive resource reduction
         launch_args = []
+        user_data_dir = "/tmp/playwright-user-data"
         if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+            # Ensure user data dir exists in /tmp
+            if not os.path.exists(user_data_dir):
+                os.makedirs(user_data_dir, exist_ok=True)
+
             launch_args = [
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
                 "--disable-dev-shm-usage",
                 "--disable-gpu",
                 "--no-zygote",
+                "--single-process",  # Often required in Lambda to prevent zombie processes
+                "--user-data-dir=" + user_data_dir,
                 "--disable-background-timer-throttling",
                 "--disable-backgrounding-occluded-windows",
                 "--disable-renderer-backgrounding",
@@ -145,15 +152,9 @@ class ArborCalendarGenerator:
                 "--disable-images",  # Don't load images to save memory
                 # Note: JavaScript is required for Arbor website interaction
                 "--disable-accelerated-2d-canvas",  # Disable hardware acceleration
-                "--disable-accelerated-jpeg-decoding",
-                "--disable-accelerated-mjpeg-decode",
-                "--disable-accelerated-video-decode",
-                "--disable-3d-apis",  # Disable WebGL and 3D APIs
-                "--disable-smooth-scrolling",
-                "--disable-translate",
-                "--disable-ipc-flooding-protection",  # May help with Lambda environment
-                "--renderer-process-limit=1",  # Limit to single renderer process
-                "--max-gum-fps=5",  # Limit frame rate
+                "--disable-software-rasterizer",
+                "--disable-3d-apis",
+                "--renderer-process-limit=1",
             ]
 
         # More conservative browser launch in Lambda with retry logic
@@ -318,9 +319,39 @@ class ArborCalendarGenerator:
         navigation_timeout = (
             60000 if os.environ.get("AWS_LAMBDA_FUNCTION_NAME") else 30000
         )
-        await self.page.goto(
-            config.arbor_base_url, timeout=navigation_timeout, wait_until="networkidle"
+
+        # In Lambda, use domcontentloaded which is more stable than networkidle
+        wait_until_strategy: Literal[
+            "commit", "domcontentloaded", "load", "networkidle"
+        ] = (
+            "domcontentloaded"
+            if os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
+            else "networkidle"
         )
+
+        max_retries = 3 if os.environ.get("AWS_LAMBDA_FUNCTION_NAME") else 1
+        # Navigation retry logic
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"   Navigation attempt {attempt + 1}...")
+                await self.page.goto(
+                    config.arbor_base_url,
+                    timeout=navigation_timeout,
+                    wait_until=wait_until_strategy,
+                )
+                break
+            except Exception as e:
+                logger.warning(f"   Navigation attempt {attempt + 1} failed: {e}")
+                if attempt == max_retries - 1:
+                    raise
+                # Re-check context
+                if not self.context or getattr(self.context, "_closed", True):
+                    logger.info(
+                        "   Context closed during navigation, attempting recovery..."
+                    )
+                    await self.start_browser(headless=True)
+                await asyncio.sleep(2)
+
         logger.info("✅ Navigation to Arbor base URL completed")
 
         # Check context after navigation
@@ -459,10 +490,16 @@ class ArborCalendarGenerator:
         # Wait for navigation after login
         try:
             if self.page:
-                await self.page.wait_for_load_state("networkidle", timeout=10000)
+                wait_strategy: Literal["domcontentloaded", "load", "networkidle"] = (
+                    "load"
+                    if os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
+                    else "networkidle"
+                )
+                await self.page.wait_for_load_state(wait_strategy, timeout=15000)
+
         except Exception:
-            # If networkidle fails, wait a bit and continue
-            await asyncio.sleep(3)
+            # If specified wait fails, wait a bit and continue
+            await asyncio.sleep(5 if os.environ.get("AWS_LAMBDA_FUNCTION_NAME") else 3)
 
     async def _manual_login(self) -> None:
         """Perform manual login process."""
@@ -524,10 +561,30 @@ class ArborCalendarGenerator:
         # First navigate to the calendar page to establish session context
         calendar_page_url = f"{config.arbor_base_url}/calendar-entry/list/"
         logger.info(f"Navigating to calendar page: {calendar_page_url}")
-        await self.page.goto(calendar_page_url)
+
+        wait_strategy: Literal["commit", "domcontentloaded", "load", "networkidle"] = (
+            "domcontentloaded" if os.environ.get("AWS_LAMBDA_FUNCTION_NAME") else "load"
+        )
+
+        max_retries = 3 if os.environ.get("AWS_LAMBDA_FUNCTION_NAME") else 1
+        # Navigation retry for calendar page
+        for attempt in range(max_retries):
+            try:
+                await self.page.goto(
+                    calendar_page_url, wait_until=wait_strategy, timeout=30000
+                )
+                break
+            except Exception as e:
+                logger.warning(
+                    f"   Calendar page navigation attempt {attempt + 1} failed: {e}"
+                )
+                if attempt == max_retries - 1:
+                    # Non-critical, we can still try to fetch API data
+                    break
+                await asyncio.sleep(1)
 
         # Wait a moment for the page to load
-        await asyncio.sleep(1)
+        await asyncio.sleep(2 if os.environ.get("AWS_LAMBDA_FUNCTION_NAME") else 1)
 
         # Get the student object ID
         student_object_id = config.get("arbor.student_object_id", "7192")
