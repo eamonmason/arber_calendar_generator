@@ -164,7 +164,7 @@ class ArborCalendarGenerator:
                 self.browser = await playwright.chromium.launch(
                     headless=headless,
                     args=launch_args,
-                    timeout=30000
+                    timeout=60000
                     if os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
                     else 30000,
                 )
@@ -178,7 +178,7 @@ class ArborCalendarGenerator:
                 await asyncio.sleep(2)  # Wait before retry
 
         # Set longer timeout for Lambda environment
-        browser_timeout = 90000 if os.environ.get("AWS_LAMBDA_FUNCTION_NAME") else 30000
+        browser_timeout = 120000 if os.environ.get("AWS_LAMBDA_FUNCTION_NAME") else 30000
 
         # Retry context creation as well
         for attempt in range(max_retries):
@@ -312,15 +312,18 @@ class ArborCalendarGenerator:
 
         # Try base URL first since /auth/login might be broken
         logger.info(f"Navigating to Arbor base URL: {config.arbor_base_url}")
-        await self.page.goto(config.arbor_base_url)
+        
+        # Increase timeout for initial navigation in Lambda
+        navigation_timeout = 60000 if os.environ.get("AWS_LAMBDA_FUNCTION_NAME") else 30000
+        await self.page.goto(config.arbor_base_url, timeout=navigation_timeout, wait_until="networkidle")
         logger.info("✅ Navigation to Arbor base URL completed")
 
         # Check context after navigation
         if not self.context or getattr(self.context, "_closed", True):
             raise RuntimeError("Browser context was closed during login navigation")
 
-        # Check if we have credentials for automatic login
-        username = config.arbor_username
+        # Add a small delay for stable page state
+        await asyncio.sleep(2 if os.environ.get("AWS_LAMBDA_FUNCTION_NAME") else 1)
         password = config.arbor_password
 
         if username and password:
