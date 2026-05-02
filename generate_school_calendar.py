@@ -122,12 +122,7 @@ class ArborCalendarGenerator:
 
         # Add Lambda-specific browser arguments with more aggressive resource reduction
         launch_args = []
-        user_data_dir = "/tmp/playwright-user-data"
         if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
-            # Ensure user data dir exists in /tmp
-            if not os.path.exists(user_data_dir):
-                os.makedirs(user_data_dir, exist_ok=True)
-
             launch_args = [
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
@@ -135,7 +130,6 @@ class ArborCalendarGenerator:
                 "--disable-gpu",
                 "--no-zygote",
                 "--single-process",  # Often required in Lambda to prevent zombie processes
-                "--user-data-dir=" + user_data_dir,
                 "--disable-background-timer-throttling",
                 "--disable-backgrounding-occluded-windows",
                 "--disable-renderer-backgrounding",
@@ -195,9 +189,9 @@ class ArborCalendarGenerator:
                         extra_http_headers={
                             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                         },
-                        viewport={"width": 800, "height": 600},
+                        viewport={"width": 1280, "height": 720},
                         java_script_enabled=True,
-                        locale="en-US",
+                        locale="en-GB",
                     )
                 else:
                     # Local context
