@@ -40,17 +40,7 @@ sam build
 sam deploy --guided
 ```
 
-You'll be prompted to configure:
-- Stack name (e.g., `arbor-calendar-sync`)
-- AWS Region (e.g., `us-east-1`)
-- Parameters:
-  - `GoogleCalendarId`: Your Google Calendar ID
-  - `ArborBaseUrl`: Your school's Arbor URL
-  - `ArborStudentId`: Your student ID in Arbor
-  - `ArborUsername`: Your Arbor username
-  - `ArborPassword`: Your Arbor password
-  - `UpdateExistingEvents`: `true` to update existing events
-  - `DeleteOrphanedEvents`: `true` to delete orphaned events
+**Note**: The deployment now includes an ECR repository with a lifecycle policy that keeps only the last 5 images. When running `sam deploy --guided`, you should specify the repository URI if prompted, or ensure it matches the one defined in the template (`<stack-name>-repo`).
 
 ### 3. Upload Credentials to AWS Parameter Store
 After deployment, upload your local Google OAuth credentials:

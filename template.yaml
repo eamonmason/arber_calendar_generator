@@ -131,13 +131,14 @@ Resources:
 
   ArborCalendarSyncFunction:
     Type: AWS::Serverless::Function
+    DependsOn: ArborCalendarSyncRepository
     Metadata:
       Dockerfile: Dockerfile
       DockerContext: .
       DockerTag: latest
     Properties:
       PackageType: Image
-      ImageUri: .
+      ImageUri: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ArborCalendarSyncRepository}:latest"
       Description: 'Syncs Arbor calendar with Google Calendar weekly on Sundays'
       Role: !GetAtt ArborCalendarSyncFunctionRole.Arn
       Architectures:
@@ -173,10 +174,40 @@ Resources:
       LogGroupName: !Sub '/aws/lambda/${ArborCalendarSyncFunction}'
       RetentionInDays: 30
 
+  ArborCalendarSyncRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub "${AWS::StackName}-repo"
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      ImageTagMutability: MUTABLE
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep last 5 images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 5
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+
 Outputs:
   ArborCalendarSyncFunction:
     Description: 'Arbor Calendar Sync Lambda Function ARN'
     Value: !GetAtt ArborCalendarSyncFunction.Arn
+
+  ArborCalendarSyncRepository:
+    Description: 'ECR Repository URI'
+    Value: !GetAtt ArborCalendarSyncRepository.RepositoryUri
 
   FunctionName:
     Description: 'Lambda Function Name'

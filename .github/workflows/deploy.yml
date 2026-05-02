@@ -89,13 +89,17 @@ jobs:
         export DOCKER_DEFAULT_PLATFORM=linux/amd64
         sam build --use-container
 
+    - name: Get AWS Account ID
+      id: get-account-id
+      run: echo "account-id=$(aws sts get-caller-identity --query Account --output text)" >> $GITHUB_OUTPUT
+
     - name: Deploy SAM application
       run: |
         sam deploy \
           --stack-name ${{ env.SAM_STACK_NAME }} \
           --capabilities CAPABILITY_IAM \
           --region ${{ env.AWS_REGION }} \
-          --resolve-image-repos \
+          --image-repository ${{ steps.get-account-id.outputs.account-id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.SAM_STACK_NAME }}-repo \
           --resolve-s3 \
           --no-confirm-changeset \
           --no-fail-on-empty-changeset \

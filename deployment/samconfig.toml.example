@@ -17,6 +17,9 @@ s3_prefix = "arbor-calendar-sync"
 region = "us-east-1"
 confirm_changeset = true
 capabilities = "CAPABILITY_IAM"
+image_repositories = [
+    "ArborCalendarSyncFunction=your-account-id.dkr.ecr.your-region.amazonaws.com/arbor-calendar-sync-repo"
+]
 parameter_overrides = [
     "GoogleCalendarId=primary",
     "ArborBaseUrl=https://your-school.uk.arbor.sc",
