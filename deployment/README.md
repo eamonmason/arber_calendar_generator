@@ -40,7 +40,7 @@ sam build
 sam deploy --guided
 ```
 
-**Note**: The deployment now includes an ECR repository with a lifecycle policy that keeps only the last 5 images. When running `sam deploy --guided`, you should specify the repository URI if prompted, or ensure it matches the one defined in the template (`<stack-name>-repo`).
+**Note**: The deployment process (via GitHub Actions) automatically manages an ECR repository with a lifecycle policy that keeps only the last 5 images. If deploying manually, you should ensure the repository `<stack-name>-repo` exists or create it using the AWS CLI.
 
 ### 3. Upload Credentials to AWS Parameter Store
 After deployment, upload your local Google OAuth credentials:

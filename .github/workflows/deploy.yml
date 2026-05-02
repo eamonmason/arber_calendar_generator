@@ -93,6 +93,33 @@ jobs:
       id: get-account-id
       run: echo "account-id=$(aws sts get-caller-identity --query Account --output text)" >> $GITHUB_OUTPUT
 
+    - name: Ensure ECR repository exists
+      run: |
+        REPO_NAME="${{ env.SAM_STACK_NAME }}-repo"
+        aws ecr describe-repositories --repository-names "$REPO_NAME" || \
+        aws ecr create-repository --repository-name "$REPO_NAME" \
+          --image-scanning-configuration scanOnPush=true \
+          --image-tag-mutability MUTABLE
+
+        aws ecr put-lifecycle-policy \
+          --repository-name "$REPO_NAME" \
+          --lifecycle-policy-text '{
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep last 5 images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 5
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }'
+
     - name: Deploy SAM application
       run: |
         sam deploy \
