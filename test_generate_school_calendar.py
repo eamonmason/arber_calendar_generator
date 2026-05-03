@@ -236,10 +236,10 @@ class TestArborCalendarGenerator:
         assert len(calendar.subcomponents) == 2
 
     @pytest.mark.asyncio
-    async def test_interactive_login_no_browser(self, generator):
-        """Test interactive login without browser started."""
+    async def test_login_no_browser(self, generator):
+        """Test login without browser started."""
         with pytest.raises(RuntimeError, match="Browser not started"):
-            await generator.interactive_login()
+            await generator.login()
 
     @pytest.mark.asyncio
     async def test_get_calendar_entries_no_browser(self, generator):

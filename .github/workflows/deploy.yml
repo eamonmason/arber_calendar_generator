@@ -120,6 +120,12 @@ jobs:
             ]
           }'
 
+    - name: Backup Google OAuth Secrets from SSM
+      run: |
+        # Backup the real secrets to local files before CloudFormation overwrites them
+        aws ssm get-parameter --name "/${{ env.SAM_STACK_NAME }}/google/credentials" --with-decryption --query "Parameter.Value" --output text > google_creds.json || echo "No creds found in SSM"
+        aws ssm get-parameter --name "/${{ env.SAM_STACK_NAME }}/google/token" --with-decryption --query "Parameter.Value" --output text > google_token.json || echo "No token found in SSM"
+
     - name: Deploy SAM application
       run: |
         sam deploy \
@@ -131,14 +137,24 @@ jobs:
           --no-confirm-changeset \
           --no-fail-on-empty-changeset \
           --parameter-overrides \
-            GoogleCredentialsParameter="${{ secrets.GOOGLE_CREDENTIALS_PARAMETER }}" \
-            GoogleTokenParameter="${{ secrets.GOOGLE_TOKEN_PARAMETER }}" \
             ArborUsername="${{ secrets.ARBOR_USERNAME }}" \
             ArborPassword="${{ secrets.ARBOR_PASSWORD }}" \
             GoogleCalendarId="${{ secrets.GOOGLE_CALENDAR_ID }}" \
             ArborBaseUrl="${{ secrets.ARBOR_BASE_URL }}" \
             ArborStudentObjectId="${{ secrets.ARBOR_STUDENT_OBJECT_ID }}" \
             ArborTimezone="${{ vars.ARBOR_TIMEZONE || 'Europe/London' }}"
+
+    - name: Restore Google OAuth Secrets to SSM
+      run: |
+        # If backup files exist and aren't placeholders, restore them to SSM
+        if [ -s google_creds.json ] && ! grep -q "placeholder" google_creds.json; then
+          echo "✓ Restoring Google credentials to SSM..."
+          aws ssm put-parameter --name "/${{ env.SAM_STACK_NAME }}/google/credentials" --value file://google_creds.json --type String --overwrite
+        fi
+        if [ -s google_token.json ] && ! grep -q "placeholder" google_token.json; then
+          echo "✓ Restoring Google token to SSM..."
+          aws ssm put-parameter --name "/${{ env.SAM_STACK_NAME }}/google/token" --value file://google_token.json --type String --overwrite
+        fi
 
     - name: Get Lambda function name
       id: get-function-name

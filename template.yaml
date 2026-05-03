@@ -47,45 +47,6 @@ Globals:
 
 Resources:
   # Parameter Store parameters for configuration
-  GoogleCredentialsParameter:
-    Type: AWS::SSM::Parameter
-    Properties:
-      Name: !Sub '/${AWS::StackName}/google/credentials'
-      Description: 'Google OAuth credentials for Arbor Calendar Sync'
-      Type: String
-      Tier: Standard
-      Value: !Sub |
-        {
-          "type": "placeholder",
-          "project_id": "your-project-id",
-          "private_key_id": "placeholder",
-          "private_key": "placeholder",
-          "client_email": "placeholder@your-project-id.iam.gserviceaccount.com",
-          "client_id": "placeholder",
-          "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-          "token_uri": "https://oauth2.googleapis.com/token",
-          "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-          "client_x509_cert_url": "placeholder"
-        }
-
-  GoogleTokenParameter:
-    Type: AWS::SSM::Parameter
-    Properties:
-      Name: !Sub '/${AWS::StackName}/google/token'
-      Description: 'Google OAuth token for Arbor Calendar Sync'
-      Type: String
-      Tier: Standard
-      Value: !Sub |
-        {
-          "token": "placeholder",
-          "refresh_token": "placeholder",
-          "token_uri": "https://oauth2.googleapis.com/token",
-          "client_id": "placeholder",
-          "client_secret": "placeholder",
-          "scopes": ["https://www.googleapis.com/auth/calendar"],
-          "expiry": "placeholder"
-        }
-
   ArborUsernameParameter:
     Type: AWS::SSM::Parameter
     Properties:
@@ -189,15 +150,6 @@ Outputs:
   ParameterStorePrefix:
     Description: 'Parameter Store prefix for all parameters'
     Value: !Sub '/${AWS::StackName}'
-
-
-  GoogleCredentialsParameter:
-    Description: 'Google Credentials Parameter name'
-    Value: !Sub '/${AWS::StackName}/google/credentials'
-
-  GoogleTokenParameter:
-    Description: 'Google Token Parameter name'
-    Value: !Sub '/${AWS::StackName}/google/token'
 
   ArborUsernameParameter:
     Description: 'Arbor Username Parameter name'

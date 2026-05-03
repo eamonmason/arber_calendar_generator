@@ -58,6 +58,7 @@ class ArborCalendarGenerator:
     """Main class for generating school calendars from Arbor API."""
 
     def __init__(self) -> None:
+        self.playwright: Any = None
         self.browser: Browser | None = None
         self.context: BrowserContext | None = None
         self.page: Page | None = None
@@ -67,11 +68,7 @@ class ArborCalendarGenerator:
         import os
 
         # Clean up any existing browser resources first
-        if (
-            hasattr(self, "context")
-            and self.context
-            and not getattr(self.context, "_closed", False)
-        ):
+        if hasattr(self, "context") and self.context:
             try:
                 await self.context.close()
             except Exception:
@@ -82,7 +79,7 @@ class ArborCalendarGenerator:
             except Exception:
                 pass
 
-        playwright = await async_playwright().start()
+        self.playwright = await async_playwright().start()
 
         # Debug: Show Playwright and browser information in Lambda
         if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
@@ -155,7 +152,7 @@ class ArborCalendarGenerator:
         max_retries = 3 if os.environ.get("AWS_LAMBDA_FUNCTION_NAME") else 1
         for attempt in range(max_retries):
             try:
-                self.browser = await playwright.chromium.launch(
+                self.browser = await self.playwright.chromium.launch(
                     headless=headless,
                     args=launch_args,
                     timeout=60000
@@ -213,9 +210,6 @@ class ArborCalendarGenerator:
                 await asyncio.sleep(1)  # Wait before retry
         logger.info("✅ Browser started successfully")
         logger.debug(f"   Context created: {self.context is not None}")
-        logger.debug(
-            f"   Context closed status: {getattr(self.context, '_closed', 'unknown')}"
-        )
         logger.debug(f"   Page created: {self.page is not None}")
         logger.debug(f"   Page closed: {self.page.is_closed() if self.page else 'N/A'}")
 
@@ -239,11 +233,7 @@ class ArborCalendarGenerator:
             logger.warning(f"Error closing page: {e}")
 
         try:
-            if (
-                hasattr(self, "context")
-                and self.context
-                and not getattr(self.context, "_closed", False)
-            ):
+            if hasattr(self, "context") and self.context:
                 await self.context.close()
         except Exception as e:
             logger.warning(f"Error closing context: {e}")
@@ -254,31 +244,32 @@ class ArborCalendarGenerator:
         except Exception as e:
             logger.warning(f"Error closing browser: {e}")
 
+        try:
+            if hasattr(self, "playwright") and self.playwright:
+                await self.playwright.stop()
+        except Exception as e:
+            logger.warning(f"Error stopping playwright: {e}")
+
         # Reset references
         self.page = None
         self.context = None
         self.browser = None
+        self.playwright = None
 
-    async def interactive_login(self) -> None:
-        """Perform interactive login to Arbor."""
+    async def login(self) -> None:
+        """Perform login to Arbor using provided credentials."""
         if not self.page:
             raise RuntimeError("Browser not started. Call start_browser() first.")
 
         # Check context before navigation with more detailed debugging
-        if not self.context or getattr(self.context, "_closed", True):
-            logger.critical(
-                "❌ CRITICAL: Browser context validation failed before login"
-            )
+        if not self.page or self.page.is_closed():
+            logger.critical("❌ CRITICAL: Browser page validation failed before login")
             logger.debug(f"   Context exists: {self.context is not None}")
-            if self.context:
-                logger.debug(
-                    f"   Context closed: {getattr(self.context, '_closed', 'unknown')}"
-                )
             logger.debug(f"   Page exists: {self.page is not None}")
             if self.page:
                 logger.debug(f"   Page closed: {self.page.is_closed()}")
 
-            # In Lambda, try to recreate the entire browser if context is closed
+            # In Lambda, try to recreate the entire browser if page is closed
             if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
                 logger.info(
                     "   Lambda environment detected - attempting full browser restart"
@@ -301,10 +292,10 @@ class ArborCalendarGenerator:
                 except Exception as recovery_error:
                     logger.error(f"   ❌ Browser restart failed: {recovery_error}")
                     raise RuntimeError(
-                        f"Browser context was closed and recovery failed: {recovery_error}"
+                        f"Browser page was closed and recovery failed: {recovery_error}"
                     ) from recovery_error
             else:
-                raise RuntimeError("Browser context was closed before login navigation")
+                raise RuntimeError("Browser page was closed before login navigation")
 
         # Try base URL first since /auth/login might be broken
         logger.info(f"Navigating to Arbor base URL: {config.arbor_base_url}")
@@ -339,18 +330,19 @@ class ArborCalendarGenerator:
                 if attempt == max_retries - 1:
                     raise
                 # Re-check context
-                if not self.context or getattr(self.context, "_closed", True):
+                if not self.page or self.page.is_closed():
                     logger.info(
-                        "   Context closed during navigation, attempting recovery..."
+                        "   Page closed during navigation, attempting recovery..."
                     )
                     await self.start_browser(headless=True)
+
                 await asyncio.sleep(2)
 
         logger.info("✅ Navigation to Arbor base URL completed")
 
-        # Check context after navigation
-        if not self.context or getattr(self.context, "_closed", True):
-            raise RuntimeError("Browser context was closed during login navigation")
+        # Check page status after navigation
+        if not self.page or self.page.is_closed():
+            raise RuntimeError("Browser page was closed during login navigation")
 
         # Add a small delay for stable page state
         await asyncio.sleep(2 if os.environ.get("AWS_LAMBDA_FUNCTION_NAME") else 1)
@@ -359,41 +351,48 @@ class ArborCalendarGenerator:
         username = config.arbor_username
         password = config.arbor_password
 
-        if username and password:
-            logger.info("Attempting automatic login with provided credentials...")
-            try:
+        if not username or not password:
+            raise RuntimeError(
+                "Credentials not provided. Please set ARBOR_USERNAME and ARBOR_PASSWORD environment variables."
+            )
+
+        logger.info("Attempting login with provided credentials...")
+        try:
+            # Check if we're already on a dashboard (maybe session persisted?)
+            if await self.page.query_selector(".header, .navigation, .main-content"):
+                logger.info("Already logged in, skipping login form.")
+            else:
                 await self._automatic_login(username, password)
-                logger.info("Automatic login completed!")
-            except Exception as e:
-                logger.error(f"Automatic login failed: {e}")
-                # Check if we're in Lambda environment - don't try manual login
-                if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
-                    logger.error(
-                        "Running in Lambda environment, cannot perform manual login."
-                    )
-                    raise RuntimeError(
-                        f"Automatic login failed in Lambda environment: {e}"
-                    ) from e
-                logger.info("Falling back to manual login...")
-                await self._manual_login()
-        else:
-            # Check if we're in Lambda environment - don't try manual login
-            if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
-                logger.error("No credentials provided in Lambda environment.")
-                raise RuntimeError(
-                    "Cannot perform manual login in Lambda environment. Please provide ARBOR_USERNAME and ARBOR_PASSWORD."
-                )
-            logger.info("No credentials provided, using manual login...")
-            await self._manual_login()
+            logger.info("Login process completed!")
+        except Exception as e:
+            logger.error(f"Login failed: {e}")
+            # Log page info on failure
+            try:
+                title = await self.page.title()
+                url = self.page.url
+                logger.error(f"   Failure Page URL: {url}")
+                logger.error(f"   Failure Page Title: {title}")
+            except Exception:
+                pass
+            raise RuntimeError(f"Login failed: {e}") from e
 
         # Verify we're logged in by checking for common elements
         try:
+            # Wait longer for redirect/load
             await self.page.wait_for_selector(
-                ".header, .navigation, .main-content", timeout=10000
+                ".header, .navigation, .main-content, .top-nav, .dashboard",
+                timeout=15000,
             )
-            logger.info("Login successful!")
+            logger.info("✅ Login verification successful!")
         except Exception:
-            logger.warning("Could not verify login status. Continuing anyway...")
+            url = self.page.url
+            title = await self.page.title()
+            logger.warning(
+                f"Could not verify login status. Current URL: {url}, Title: {title}"
+            )
+            logger.debug(
+                "Continuing anyway, but this may cause 403 errors if login actually failed."
+            )
 
     async def _automatic_login(self, username: str, password: str) -> None:
         """Attempt automatic login with provided credentials."""
@@ -495,45 +494,15 @@ class ArborCalendarGenerator:
             # If specified wait fails, wait a bit and continue
             await asyncio.sleep(5 if os.environ.get("AWS_LAMBDA_FUNCTION_NAME") else 3)
 
-    async def _manual_login(self) -> None:
-        """Perform manual login process."""
-        logger.info("Please log in to Arbor in the browser window...")
-        logger.info(
-            "Press Enter once you have successfully logged in and are on the main page."
-        )
-
-        # Wait for user to complete login
-        import sys
-
-        if sys.stdin.isatty():
-            try:
-                input("Press Enter to continue after logging in...")
-            except (EOFError, KeyboardInterrupt):
-                logger.error("Login cancelled or failed.")
-                raise
-        else:
-            logger.info(
-                "Running in non-interactive mode, assuming login is completed..."
-            )
-            # Add a small delay to allow any auto-login to complete
-            await asyncio.sleep(2)
-
     async def get_calendar_entries(
         self, start_date: datetime.date, end_date: datetime.date
     ) -> dict:
         """Get the calendar entries for the given date range."""
         if not self.page or self.page.is_closed():
-            raise RuntimeError("Browser page is not available or has been closed.")
-
-        if not self.context or getattr(self.context, "_closed", True):
             logger.critical(
-                "❌ CRITICAL: Browser context is not available or has been closed."
+                "❌ CRITICAL: Browser page is not available or has been closed."
             )
             logger.debug(f"   Context exists: {self.context is not None}")
-            if self.context:
-                logger.debug(
-                    f"   Context closed: {getattr(self.context, '_closed', 'unknown')}"
-                )
             logger.debug(f"   Page exists: {self.page is not None}")
             if self.page:
                 logger.debug(f"   Page closed: {self.page.is_closed()}")
@@ -550,7 +519,7 @@ class ArborCalendarGenerator:
                     "   Consider increasing Lambda timeout or checking browser launch arguments"
                 )
 
-            raise RuntimeError("Browser context is not available or has been closed.")
+            raise RuntimeError("Browser page is not available or has been closed.")
 
         # First navigate to the calendar page to establish session context
         calendar_page_url = f"{config.arbor_base_url}/calendar-entry/list/"
@@ -767,12 +736,6 @@ class ArborCalendarGenerator:
         """Fetch detailed lesson information including teacher from the lesson URL."""
         if not self.page or self.page.is_closed():
             logger.warning("Page is closed, cannot fetch detailed lesson info")
-            return {"staff": "Teacher TBD"}
-
-        if not self.context or getattr(self.context, "_closed", True):
-            logger.warning(
-                "Browser context is closed, cannot fetch detailed lesson info"
-            )
             return {"staff": "Teacher TBD"}
 
         try:
@@ -1042,7 +1005,7 @@ class ArborCalendarGenerator:
         """
         try:
             await self.start_browser(headless=headless)
-            await self.interactive_login()
+            await self.login()
 
             logger.info("Fetching calendar entries...")
             calendar_entries = await self.get_calendar_entries(start_date, end_date)
@@ -1121,8 +1084,9 @@ def configure_logging() -> None:
     )
 
     # Set appropriate log levels
-    logging.getLogger(__name__).setLevel(logging.INFO)
-    logging.getLogger("google_calendar_sync").setLevel(logging.INFO)
+    level = getattr(logging, log_level, logging.INFO)
+    logging.getLogger(__name__).setLevel(level)
+    logging.getLogger("google_calendar_sync").setLevel(level)
 
 
 async def main() -> None:
