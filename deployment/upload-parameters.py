@@ -220,7 +220,7 @@ def main():
         print(f"   Google Credentials: {outputs['GoogleCredentialsParameter']}")
         print(f"   Google Token: {outputs['GoogleTokenParameter']}")
         print(f"   Arbor Username: {outputs['ArborUsernameParameter']}")
-        print(f"   Arbor Password: {outputs['ArborPasswordParameter']}")
+        print("   Arbor Password: (parameter path withheld from output)")
     else:
         print("\n❌ Some parameters failed to upload. Check the errors above.")
         sys.exit(1)

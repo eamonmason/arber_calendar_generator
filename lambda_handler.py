@@ -41,14 +41,15 @@ def get_parameter_from_aws(parameter_name: str) -> Any:
         from botocore.exceptions import ClientError
 
         ssm_client = boto3.client("ssm")
-        logger.debug(f"Attempting to get parameter: {parameter_name}")
+        # This function is also used to fetch secrets (Arbor password, Google
+        # token), so the parameter name/path and its decrypted value are never
+        # logged here, even at debug level - only the call outcome.
+        logger.debug("Attempting to retrieve parameter from Parameter Store")
         response = ssm_client.get_parameter(Name=parameter_name, WithDecryption=True)
 
         # For JSON parameters, parse the value
         parameter_value = response["Parameter"]["Value"]
-        logger.debug(
-            f"Successfully retrieved parameter {parameter_name} (length: {len(parameter_value)})"
-        )
+        logger.debug("Successfully retrieved parameter from Parameter Store")
         try:
             return json.loads(parameter_value)
         except json.JSONDecodeError:
@@ -56,13 +57,13 @@ def get_parameter_from_aws(parameter_name: str) -> Any:
             return parameter_value
     except ImportError:
         # boto3 not available (local execution)
-        logger.debug(f"boto3 not available for parameter {parameter_name}")
+        logger.debug("boto3 not available; skipping Parameter Store lookup")
         return None
     except ClientError as e:
-        logger.error(f"ClientError retrieving parameter {parameter_name}: {e}")
+        logger.error(f"ClientError retrieving parameter from Parameter Store: {e}")
         return None
     except Exception as e:
-        logger.error(f"Unexpected error retrieving parameter {parameter_name}: {e}")
+        logger.error(f"Unexpected error retrieving parameter from Parameter Store: {e}")
         return None
 
 
@@ -128,7 +129,7 @@ def setup_aws_credentials() -> None:
 
     # Get Arbor password
     arbor_password_param = os.environ.get("ARBOR_PASSWORD_PARAMETER")
-    logger.info(f"Looking for Arbor password parameter: {arbor_password_param}")
+    logger.info("Looking for Arbor password parameter")
     if arbor_password_param:
         arbor_password = get_parameter_from_aws(arbor_password_param)
         if arbor_password:
@@ -136,7 +137,7 @@ def setup_aws_credentials() -> None:
             logger.info("✓ Arbor password loaded from Parameter Store")
             credentials_loaded["arbor_password"] = True
         else:
-            logger.info(f"❌ Failed to load Arbor password from {arbor_password_param}")
+            logger.info("❌ Failed to load Arbor password from Parameter Store")
     else:
         logger.info("❌ ARBOR_PASSWORD_PARAMETER environment variable not set")
 
