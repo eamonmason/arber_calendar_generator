@@ -6,7 +6,9 @@ RUN pip install uv
 # Install Node.js for x86_64 (required for Playwright)
 RUN dnf install -y nodejs npm && dnf clean all
 
-# Install browser dependencies for Playwright on Amazon Linux
+# Install browser dependencies for Playwright on Amazon Linux.
+# libatomic: the Node binary bundled with playwright >= 1.65 links against
+# libatomic.so.1, which the Lambda base image doesn't ship (exit 127 otherwise).
 RUN dnf install -y \
     alsa-lib \
     at-spi2-atk \
@@ -19,6 +21,7 @@ RUN dnf install -y \
     gdk-pixbuf2 \
     glib2 \
     gtk3 \
+    libatomic \
     libX11 \
     libXcomposite \
     libXdamage \
@@ -60,7 +63,7 @@ RUN chmod -R 755 ${LAMBDA_TASK_ROOT}/playwright-browsers
 RUN echo "=== DEBUG: Playwright installation ===" && \
     ls -la ${LAMBDA_TASK_ROOT}/playwright-browsers/ && \
     echo "=== DEBUG: Browser executable check ===" && \
-    ls -la ${LAMBDA_TASK_ROOT}/playwright-browsers/chromium*/chrome-linux/chrome 2>/dev/null || echo "Chrome binary not found in expected location" && \
+    ls -la ${LAMBDA_TASK_ROOT}/playwright-browsers/chromium*/chrome-linux*/chrome 2>/dev/null || echo "Chrome binary not found in expected location" && \
     echo "=== DEBUG: Browser directory structure ===" && \
     ls -laR ${LAMBDA_TASK_ROOT}/playwright-browsers/ | head -20 && \
     echo "=== DEBUG: Environment variables ===" && \
