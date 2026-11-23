@@ -1035,16 +1035,16 @@ wheels = [
 
 [[package]]
 name = "types-boto3"
-version = "1.40.30"
+version = "1.44.7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "botocore-stubs" },
     { name = "types-s3transfer" },
     { name = "typing-extensions", marker = "python_full_version < '3.12'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/1a/9d/8ec226debb0addb423f41701e26fab1805590d366e48167c0e7c0165fe31/types_boto3-1.40.30.tar.gz", hash = "sha256:4ce604719dab0078a6332d49fa8ebf9d96c8f87dae2f7bd39e8e2e75b17c3510", size = 101319, upload-time = "2025-09-12T19:24:50.322Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9d/ba/765bd1080d52e576b1a496aa0771f74ba396bd14851eb06b624f935cc41b/types_boto3-1.44.7.tar.gz", hash = "sha256:d0bd45dc36d14d19a4e70444981dda9cebfba73e533090a3a7520923ad4c2b9c", size = 107013, upload-time = "2026-11-20T00:02:08.495Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d7/05/e968551e8c704a92ec7f0a089a3601203044f240f4e05030fe112a1fdd45/types_boto3-1.40.30-py3-none-any.whl", hash = "sha256:15b3fc5b868164d134dcf58c29333ceab27ca31082a0e9ab0b8b298d7a44a81f", size = 69664, upload-time = "2025-09-12T19:24:44.411Z" },
+    { url = "https://files.pythonhosted.org/packages/52/42/f085d42421435eee9f3d87c877e6f87fe5b08869bf2964947332b6e2d67c/types_boto3-1.44.7-py3-none-any.whl", hash = "sha256:239fd072c1734d1b5c44df7d8d0c163926a49a20581e0568e4fccb4a39d22cd0", size = 72540, upload-time = "2026-11-20T00:02:00.826Z" },
 ]
 
 [[package]]
